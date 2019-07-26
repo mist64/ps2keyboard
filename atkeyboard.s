@@ -1,504 +1,505 @@
-; da65 V2.15
-; Created:    2019-07-26 10:34:52
-; Input file: atkeyboard-c000.bin
-; Page:       1
+; AT-Keyboard by İlker Fıçıcılar, 1997
+;
+; reverse-engineered by Michael Steil <mist64@mac.com>, 2019
 
+lc000:	jmp lc020
 
-        .setcpu "6502"
+lc003:	jmp lc093
 
-LEA31           := $EA31
-LC000:  jmp     LC020
+lc006:	jmp lc114
 
-LC003:  jmp     LC093
+lc009:	jmp lc17e
 
-LC006:  jmp     LC114
+lc00c:	jmp lc1e8
 
-LC009:  jmp     LC17E
+lc00f:	jmp lc211
 
-LC00C:  jmp     LC1E8
+lc012:	jmp lc222
 
-LC00F:  jmp     LC211
+	jmp lc293
 
-LC012:  jmp     LC222
+	jmp lc2c0
 
-        jmp     LC293
+	.byte $4c
+lc01c:	.addr lc2b7
+	nop
+	nop
+lc020:	ldy $d012
+	cpy #$f3
+	bcs lc02f
+	cpy #$18
+	bcc lc02f
+	lda #$00
+	sec
+	rts
 
-        jmp     LC2C0
+lc02f:	lda $00
+	and #$e7
+	sta $00
+	lda #$18
+	ldy #$20
+lc039:	cpy $d012
+	beq lc08c
+	bit $01
+	bne lc039
+	lda #$08
+lc044:	bit $01
+	beq lc044
+	ldy #$09
+lc04a:	bit $01
+	bne lc04a
+	lda $01
+	and #$10
+	cmp #$10
+	ror $ff
+	lda #$08
+lc058:	bit $01
+	beq lc058
+	dey
+	bne lc04a
+	rol $ff
+lc061:	bit $01
+	bne lc061
+lc065:	bit $01
+	beq lc065
+lc069:	lda $00
+	ora #$18
+	sta $00
+	lda $01
+	and #$f7
+	ora #$10
+	sta $01
+	lda $ff
+	beq lc08b
+	php
+lc07c:	lsr a
+	bcc lc080
+	iny
+lc080:	cmp #$00
+	bne lc07c
+	tya
+	plp
+	adc #$01
+	lsr a
+	lda $ff
+lc08b:	rts
 
-        .byte   $4C
-LC01C:  .addr   LC2B7
-        nop
-        nop
-LC020:  ldy     $D012
-        cpy     #$F3
-        bcs     LC02F
-        cpy     #$18
-        bcc     LC02F
-        lda     #$00
-        sec
-        rts
+lc08c:	clc
+	lda #$00
+	sta $ff
+	beq lc069
+lc093:	cmp #$e0
+	beq lc0d4
+	cmp #$f0
+	beq lc0d4
+	cmp #$e1
+	beq lc0d4
+	cmp #$12
+	beq lc0b9
+	cmp #$59
+	beq lc0b9
+	cmp #$14
+	beq lc0b6
+	cmp #$83
+	beq lc0c6
+	cmp #$11
+	bne lc0de
+	lda #$04
+	.byte $2c
+lc0b6:	lda #$02
+	.byte $2c
+lc0b9:	lda #$01
+	ora lc2fb
+	and #$0f
+	sta lc2fb
+	lda #$00
+	.byte $2c
+lc0c6:	lda #$88
+	pha
+	lda #$00
+	sta lc2f9
+	sta lc2f8
+	pla
+	clc
+	rts
 
-LC02F:  lda     $00
-        and     #$E7
-        sta     $00
-        lda     #$18
-        ldy     #$20
-LC039:  cpy     $D012
-        beq     LC08C
-        bit     $01
-        bne     LC039
-        lda     #$08
-LC044:  bit     $01
-        beq     LC044
-        ldy     #$09
-LC04A:  bit     $01
-        bne     LC04A
-        lda     $01
-        and     #$10
-        cmp     #$10
-        ror     $FF
-        lda     #$08
-LC058:  bit     $01
-        beq     LC058
-        dey
-        bne     LC04A
-        rol     $FF
-LC061:  bit     $01
-        bne     LC061
-LC065:  bit     $01
-        beq     LC065
-LC069:  lda     $00
-        ora     #$18
-        sta     $00
-        lda     $01
-        and     #$F7
-        ora     #$10
-        sta     $01
-        lda     $FF
-        beq     LC08B
-        php
-LC07C:  lsr     a
-        bcc     LC080
-        iny
-LC080:  cmp     #$00
-        bne     LC07C
-        tya
-        plp
-        adc     #$01
-        lsr     a
-        lda     $FF
-LC08B:  rts
+lc0d4:	sta lc2f8
+lc0d7:	lda #$00
+	sta lc2f9
+	clc
+	rts
 
-LC08C:  clc
-        lda     #$00
-        sta     $FF
-        beq     LC069
-LC093:  cmp     #$E0
-        beq     LC0D4
-        cmp     #$F0
-        beq     LC0D4
-        cmp     #$E1
-        beq     LC0D4
-        cmp     #$12
-        beq     LC0B9
-        cmp     #$59
-        beq     LC0B9
-        cmp     #$14
-        beq     LC0B6
-        cmp     #$83
-        beq     LC0C6
-        cmp     #$11
-        bne     LC0DE
-        lda     #$04
-        .byte   $2C
-LC0B6:  lda     #$02
-        .byte   $2C
-LC0B9:  lda     #$01
-        ora     LC2FB
-        and     #$0F
-        sta     LC2FB
-        lda     #$00
-        .byte   $2C
-LC0C6:  lda     #$88
-        pha
-        lda     #$00
-        sta     LC2F9
-        sta     LC2F8
-        pla
-        clc
-        rts
+lc0de:	cmp #$80
+	bcs lc0d7
+	tay
+	lda #$00
+	sta lc2f9
+	sta lc2f8
+	lda lc2fb
+	bne lc0f5
+lc0f0:	lda lc300,y
+	clc
+	rts
 
-LC0D4:  sta     LC2F8
-LC0D7:  lda     #$00
-        sta     LC2F9
-        clc
-        rts
+lc0f5:	cmp #$09
+	beq lc0f0
+	cmp #$02
+	bne lc102
+	lda lc400,y
+	clc
+	rts
 
-LC0DE:  cmp     #$80
-        bcs     LC0D7
-        tay
-        lda     #$00
-        sta     LC2F9
-        sta     LC2F8
-        lda     LC2FB
-        bne     LC0F5
-LC0F0:  lda     LC300,y
-        clc
-        rts
+lc102:	cmp #$04
+	bne lc10b
+	lda lc480,y
+	clc
+	rts
 
-LC0F5:  cmp     #$09
-        beq     LC0F0
-        cmp     #$02
-        bne     LC102
-        lda     LC400,y
-        clc
-        rts
+lc10b:	and #$09
+	beq lc0d7
+	lda lc380,y
+	clc
+	rts
 
-LC102:  cmp     #$04
-        bne     LC10B
-        lda     LC480,y
-        clc
-        rts
+lc114:	cmp #$e1
+	beq lc142
+	cmp #$58
+	beq lc159
+	cmp #$7e
+	beq lc168
+	cmp #$12
+	beq lc136
+	cmp #$59
+	beq lc136
+	cmp #$14
+	beq lc133
+	cmp #$11
+	bne lc13e
+	lda #$0b
+	.byte $2c
+lc133:	lda #$0d
+	.byte $2c
+lc136:	lda #$0e
+	and lc2fb
+	sta lc2fb
+lc13e:	lda #$00
+	clc
+	rts
 
-LC10B:  and     #$09
-        beq     LC0D7
-        lda     LC380,y
-        clc
-        rts
+lc142:	lda #$00
+	bit $03a9
+	pha
+	txa
+	pha
+	ldx #$07
+lc14c:	jsr lc000
+	beq lc14c
+	dex
+	bne lc14c
+	pla
+	tax
+	pla
+	clc
+	rts
 
-LC114:  cmp     #$E1
-        beq     LC142
-        cmp     #$58
-        beq     LC159
-        cmp     #$7E
-        beq     LC168
-        cmp     #$12
-        beq     LC136
-        cmp     #$59
-        beq     LC136
-        cmp     #$14
-        beq     LC133
-        cmp     #$11
-        bne     LC13E
-        lda     #$0B
-        .byte   $2C
-LC133:  lda     #$0D
-        .byte   $2C
-LC136:  lda     #$0E
-        and     LC2FB
-        sta     LC2FB
-LC13E:  lda     #$00
-        clc
-        rts
+lc159:	lda lc2fb
+	eor #$08
+	sta lc2fb
+	nop
+	nop
+	nop
+	lda #$00
+	clc
+	rts
 
-LC142:  lda     #$00
-        bit     $03A9
-        pha
-        txa
-        pha
-        ldx     #$07
-LC14C:  jsr     LC000
-        beq     LC14C
-        dex
-        bne     LC14C
-        pla
-        tax
-        pla
-        clc
-        rts
+lc168:	lda lc2fa
+	eor #$80
+	sta lc2fa
+	nop
+	nop
+	nop
+	lda #$13
+	ldy lc2fa
+	bmi lc17c
+	lda #$11
+lc17c:	clc
+	rts
 
-LC159:  lda     LC2FB
-        eor     #$08
-        sta     LC2FB
-        nop
-        nop
-        nop
-        lda     #$00
-        clc
-        rts
+lc17e:	cmp #$7e
+	beq lc1af
+	cmp #$f0
+	beq lc1c0
+	cmp #$4a
+	beq lc1ab
+	cmp #$5a
+	beq lc1a8
+	cmp #$12
+	beq lc1cc
+	cmp #$14
+	beq lc19d
+	cmp #$11
+	bne lc1da
+	lda #$04
+	.byte $2c
+lc19d:	lda #$02
+	ora lc2fb
+	sta lc2fb
+lc1a5:	lda #$00
+	.byte $2c
+lc1a8:	lda #$0d
+	.byte $2c
+lc1ab:	lda #$2f
+	clc
+	rts
 
-LC168:  lda     LC2FA
-        eor     #$80
-        sta     LC2FA
-        nop
-        nop
-        nop
-        lda     #$13
-        ldy     LC2FA
-        bmi     LC17C
-        lda     #$11
-LC17C:  clc
-        rts
+lc1af:	txa
+	pha
+	ldx #$06
+lc1b3:	jsr lc000
+	beq lc1b3
+	dex
+	bne lc1b3
+	pla
+	tax
+	lda #$ff
+	rts
 
-LC17E:  cmp     #$7E
-        beq     LC1AF
-        cmp     #$F0
-        beq     LC1C0
-        cmp     #$4A
-        beq     LC1AB
-        cmp     #$5A
-        beq     LC1A8
-        cmp     #$12
-        beq     LC1CC
-        cmp     #$14
-        beq     LC19D
-        cmp     #$11
-        bne     LC1DA
-        lda     #$04
-        .byte   $2C
-LC19D:  lda     #$02
-        ora     LC2FB
-        sta     LC2FB
-LC1A5:  lda     #$00
-        .byte   $2C
-LC1A8:  lda     #$0D
-        .byte   $2C
-LC1AB:  lda     #$2F
-        clc
-        rts
+lc1c0:	lda #$f1
+	sta lc2f8
+	lda #$00
+	sta lc2f9
+	clc
+	rts
 
-LC1AF:  txa
-        pha
-        ldx     #$06
-LC1B3:  jsr     LC000
-        beq     LC1B3
-        dex
-        bne     LC1B3
-        pla
-        tax
-        lda     #$FF
-        rts
+lc1cc:	jsr lc000
+	beq lc1cc
+lc1d1:	jsr lc000
+	beq lc1d1
+	lda #$00
+	clc
+	rts
 
-LC1C0:  lda     #$F1
-        sta     LC2F8
-        lda     #$00
-        sta     LC2F9
-        clc
-        rts
+lc1da:	cmp #$68
+	bcc lc1a5
+	cmp #$80
+	bcs lc1a5
+	tay
+	lda lc4a0,y
+	clc
+	rts
 
-LC1CC:  jsr     LC000
-        beq     LC1CC
-LC1D1:  jsr     LC000
-        beq     LC1D1
-        lda     #$00
-        clc
-        rts
+lc1e8:	cmp #$14
+	beq lc202
+	cmp #$11
+	beq lc205
+	cmp #$12
+	bne lc20d
+lc1f4:	jsr lc000
+	beq lc1f4
+lc1f9:	jsr lc000
+	beq lc1f9
+	lda #$00
+	clc
+	rts
 
-LC1DA:  cmp     #$68
-        bcc     LC1A5
-        cmp     #$80
-        bcs     LC1A5
-        tay
-        lda     LC4A0,y
-        clc
-        rts
+lc202:	lda #$0d
+	.byte $2c
+lc205:	lda #$0b
+	and lc2fb
+	sta lc2fb
+lc20d:	lda #$00
+	clc
+	rts
 
-LC1E8:  cmp     #$14
-        beq     LC202
-        cmp     #$11
-        beq     LC205
-        cmp     #$12
-        bne     LC20D
-LC1F4:  jsr     LC000
-        beq     LC1F4
-LC1F9:  jsr     LC000
-        beq     LC1F9
-        lda     #$00
-        clc
-        rts
+lc211:	pha
+	lda $c6
+	cmp #$0a
+	bcs lc220
+	inc $c6
+	tax
+	pla
+	sta $0277,x
+	rts
 
-LC202:  lda     #$0D
-        .byte   $2C
-LC205:  lda     #$0B
-        and     LC2FB
-        sta     LC2FB
-LC20D:  lda     #$00
-        clc
-        rts
+lc220:	pla
+	rts
 
-LC211:  pha
-        lda     $C6
-        cmp     #$0A
-        bcs     LC220
-        inc     $C6
-        tax
-        pla
-        sta     $0277,x
-        rts
+lc222:	lda lc2f9
+	bne lc22e
+	jsr lc000
+	sta lc2f9
+	rts
 
-LC220:  pla
-        rts
+lc22e:	lda lc2f8
+	bne lc23f
+	lda lc2f9
+	jsr lc003
+	beq lc23e
+	jsr lc00f
+lc23e:	rts
 
-LC222:  lda     LC2F9
-        bne     LC22E
-        jsr     LC000
-        sta     LC2F9
-        rts
+lc23f:	cmp #$f0
+	bne lc262
+	lda #$00
+	sta lc2f8
+	lda lc2f9
+	jsr lc006
+	beq lc253
+	jsr lc00f
+lc253:	lda #$00
+	sta lc2f9
+	rts
 
-LC22E:  lda     LC2F8
-        bne     LC23F
-        lda     LC2F9
-        jsr     LC003
-        beq     LC23E
-        jsr     LC00F
-LC23E:  rts
+lc259:	lda #$00
+	sta lc2f8
+	sta lc2f9
+	rts
 
-LC23F:  cmp     #$F0
-        bne     LC262
-        lda     #$00
-        sta     LC2F8
-        lda     LC2F9
-        jsr     LC006
-        beq     LC253
-        jsr     LC00F
-LC253:  lda     #$00
-        sta     LC2F9
-        rts
+lc262:	cmp #$e0
+	bne lc27c
+	lda #$00
+	sta lc2f8
+	lda lc2f9
+	jsr lc009
+	beq lc253
+	jsr lc00f
+	lda #$00
+	sta lc2f9
+	rts
 
-LC259:  lda     #$00
-        sta     LC2F8
-        sta     LC2F9
-        rts
+lc27c:	cmp #$f1
+	bne lc259
+	lda #$00
+	sta lc2f8
+	lda lc2f9
+	jsr lc00c
+	beq lc259
+	jsr lc00f
+	clc
+	bcc lc259
+lc293:	sei
+	lda lc01c
+	sta $0314
+	lda lc01c+1
+	sta $0315
+	lda #$01
+	sta $d01a
+	sta $dc0d
+	lda #$fa
+	sta $d012
+	lda $d011
+	and #$7f
+	sta $d011
+	cli
+	rts
 
-LC262:  cmp     #$E0
-        bne     LC27C
-        lda     #$00
-        sta     LC2F8
-        lda     LC2F9
-        jsr     LC009
-        beq     LC253
-        jsr     LC00F
-        lda     #$00
-        sta     LC2F9
-        rts
+lc2b7:	jsr lc012
+	inc $d019
+	jmp $ea31
 
-LC27C:  cmp     #$F1
-        bne     LC259
-        lda     #$00
-        sta     LC2F8
-        lda     LC2F9
-        jsr     LC00C
-        beq     LC259
-        jsr     LC00F
-        clc
-        bcc     LC259
-LC293:  sei
-        lda     LC01C
-        sta     $0314
-        lda     LC01C+1
-        sta     $0315
-        lda     #$01
-        sta     $D01A
-        sta     $DC0D
-        lda     #$FA
-        sta     $D012
-        lda     $D011
-        and     #$7F
-        sta     $D011
-        cli
-        rts
+lc2c0:	sei
+	lda #$31
+	sta $0314
+	lda #$ea
+	sta $0315
+	lda #$00
+	sta $d01a
+	lda #$00
+	sta $dc0d
+	sta $dc0e
+	sta $dc0f
+	lda #$1a
+	sta $dc04
+	lda #$41
+	sta $dc05
+	lda #$01
+	sta $dc0e
+	lda #$81
+	sta $dc0d
+	cli
+	rts
 
-LC2B7:  jsr     LC012
-        inc     $D019
-        jmp     LEA31
+	.byte 0,0,0,0,0,0,0
 
-LC2C0:  sei
-        lda     #$31
-        sta     $0314
-        lda     #$EA
-        sta     $0315
-        lda     #$00
-        sta     $D01A
-        lda     #$00
-        sta     $DC0D
-        sta     $DC0E
-        sta     $DC0F
-        lda     #$1A
-        sta     $DC04
-        lda     #$41
-        sta     $DC05
-        lda     #$01
-        sta     $DC0E
-        lda     #$81
-        sta     $DC0D
-        cli
-        rts
+lc2f8:	.byte $00
+lc2f9:	.byte $00
+lc2fa:	.byte $80
 
-        .byte   $00,$00,$00,$00,$00,$00,$00
-LC2F8:  .byte   $00
-LC2F9:  .byte   $00
-LC2FA:  .byte   $80
-LC2FB:  .byte   $00,$00,$00,$00,$00
-LC300:  .byte   $00,$00,$00,$87,$86,$85,$89,$00
-        .byte   $00,$00,$8C,$8B,$8A,$00,$7E,$00
-        .byte   $00,$00,$00,$00,$00,$51,$31,$00
-        .byte   $00,$00,$5A,$53,$41,$57,$32,$00
-        .byte   $00,$43,$58,$44,$45,$34,$33,$00
-        .byte   $00,$20,$56,$46,$54,$52,$35,$00
-        .byte   $00,$4E,$42,$48,$47,$59,$36,$00
-        .byte   $00,$00,$4D,$4A,$55,$37,$38,$00
-        .byte   $00,$2C,$4B,$49,$4F,$30,$39,$00
-        .byte   $00,$2E,$2F,$4C,$3B,$50,$2D,$00
-        .byte   $00,$00,$2A,$00,$5B,$3D,$00,$00
-        .byte   $00,$00,$0D,$5D,$00,$5C,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$14,$00
-        .byte   $00,$31,$00,$34,$37,$00,$00,$00
-        .byte   $30,$2E,$32,$35,$36,$38,$1B,$00
-        .byte   $00,$2B,$33,$2D,$2A,$39,$00,$00
-LC380:  .byte   $00,$00,$00,$88,$00,$00,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$1B,$00
-        .byte   $00,$00,$00,$00,$00,$71,$21,$00
-        .byte   $00,$00,$7A,$73,$61,$77,$22,$00
-        .byte   $00,$63,$78,$64,$65,$24,$23,$00
-        .byte   $00,$20,$76,$66,$74,$72,$25,$00
-        .byte   $00,$6E,$62,$68,$67,$79,$26,$00
-        .byte   $00,$00,$6D,$6A,$75,$27,$28,$00
-        .byte   $00,$3C,$6B,$69,$6F,$30,$29,$00
-        .byte   $00,$3E,$3F,$6C,$3A,$70,$2D,$00
-        .byte   $00,$00,$5F,$00,$7B,$2B,$00,$00
-        .byte   $00,$00,$0D,$7D,$00,$7C,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$14,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$14,$00,$00,$00,$00,$00,$00
-        .byte   $00,$2B,$00,$2D,$00,$00,$00,$00
-LC400:  .byte   $00,$00,$00,$00,$00,$00,$00,$FF
-        .byte   $00,$00,$00,$00,$00,$00,$7E,$00
-        .byte   $00,$00,$00,$00,$00,$11,$90,$00
-        .byte   $00,$00,$1A,$13,$01,$17,$05,$00
-        .byte   $00,$03,$18,$04,$05,$9F,$1C,$00
-        .byte   $00,$20,$16,$06,$14,$12,$9C,$00
-        .byte   $00,$0E,$02,$08,$07,$19,$1E,$00
-        .byte   $00,$00,$0D,$0A,$15,$1F,$9E,$00
-        .byte   $00,$2C,$0B,$09,$0F,$92,$12,$00
-        .byte   $00,$2E,$2F,$0C,$3B,$10,$2D,$00
-        .byte   $00,$00,$27,$00,$5B,$3D,$00,$00
-        .byte   $00,$00,$0D,$5D,$00,$5C,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$14,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$2B,$00,$2D,$00,$00,$00,$00
-LC480:  .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$7E,$00
-        .byte   $00,$00,$00,$00,$00,$AB,$81,$00
-        .byte   $00,$00,$AD,$AE,$B0,$B3,$95,$00
-LC4A0:  .byte   $00,$BC,$BD,$AC,$B1,$97,$96,$00
-        .byte   $00,$20,$BE,$BB,$A3,$B2,$98,$00
-        .byte   $00,$B6,$BF,$B4,$A5,$B7,$99,$00
-        .byte   $00,$00,$A7,$B5,$B8,$9A,$9B,$00
-        .byte   $00,$3C,$A1,$A2,$B9,$30,$29,$00
-        .byte   $00,$3E,$3F,$B6,$5D,$AF,$7C,$00
-        .byte   $00,$00,$27,$00,$40,$3D,$00,$00
-        .byte   $00,$00,$0D,$5E,$00,$A8,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$14,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$2B,$00,$2D,$00,$00,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$00,$00,$9D,$13,$00,$00,$00
-        .byte   $94,$14,$11,$00,$1D,$91,$00,$00
-        .byte   $00,$00,$0A,$00,$00,$93,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
-        .byte   $05
+lc2fb:	.byte $00,$00,$00,$00,$00
+
+lc300:	.byte $00,$00,$00,$87,$86,$85,$89,$00
+	.byte $00,$00,$8c,$8b,$8a,$00,$7e,$00
+	.byte $00,$00,$00,$00,$00,$51,$31,$00
+	.byte $00,$00,$5a,$53,$41,$57,$32,$00
+	.byte $00,$43,$58,$44,$45,$34,$33,$00
+	.byte $00,$20,$56,$46,$54,$52,$35,$00
+	.byte $00,$4e,$42,$48,$47,$59,$36,$00
+	.byte $00,$00,$4d,$4a,$55,$37,$38,$00
+	.byte $00,$2c,$4b,$49,$4f,$30,$39,$00
+	.byte $00,$2e,$2f,$4c,$3b,$50,$2d,$00
+	.byte $00,$00,$2a,$00,$5b,$3d,$00,$00
+	.byte $00,$00,$0d,$5d,$00,$5c,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$14,$00
+	.byte $00,$31,$00,$34,$37,$00,$00,$00
+	.byte $30,$2e,$32,$35,$36,$38,$1b,$00
+	.byte $00,$2b,$33,$2d,$2a,$39,$00,$00
+
+lc380:	.byte $00,$00,$00,$88,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$1b,$00
+	.byte $00,$00,$00,$00,$00,$71,$21,$00
+	.byte $00,$00,$7a,$73,$61,$77,$22,$00
+	.byte $00,$63,$78,$64,$65,$24,$23,$00
+	.byte $00,$20,$76,$66,$74,$72,$25,$00
+	.byte $00,$6e,$62,$68,$67,$79,$26,$00
+	.byte $00,$00,$6d,$6a,$75,$27,$28,$00
+	.byte $00,$3c,$6b,$69,$6f,$30,$29,$00
+	.byte $00,$3e,$3f,$6c,$3a,$70,$2d,$00
+	.byte $00,$00,$5f,$00,$7b,$2b,$00,$00
+	.byte $00,$00,$0d,$7d,$00,$7c,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$14,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$14,$00,$00,$00,$00,$00,$00
+	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
+
+lc400:	.byte $00,$00,$00,$00,$00,$00,$00,$ff
+	.byte $00,$00,$00,$00,$00,$00,$7e,$00
+	.byte $00,$00,$00,$00,$00,$11,$90,$00
+	.byte $00,$00,$1a,$13,$01,$17,$05,$00
+	.byte $00,$03,$18,$04,$05,$9f,$1c,$00
+	.byte $00,$20,$16,$06,$14,$12,$9c,$00
+	.byte $00,$0e,$02,$08,$07,$19,$1e,$00
+	.byte $00,$00,$0d,$0a,$15,$1f,$9e,$00
+	.byte $00,$2c,$0b,$09,$0f,$92,$12,$00
+	.byte $00,$2e,$2f,$0c,$3b,$10,$2d,$00
+	.byte $00,$00,$27,$00,$5b,$3d,$00,$00
+	.byte $00,$00,$0d,$5d,$00,$5c,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$14,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
+
+lc480:	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$7e,$00
+	.byte $00,$00,$00,$00,$00,$ab,$81,$00
+	.byte $00,$00,$ad,$ae,$b0,$b3,$95,$00
+lc4a0:	.byte $00,$bc,$bd,$ac,$b1,$97,$96,$00
+	.byte $00,$20,$be,$bb,$a3,$b2,$98,$00
+	.byte $00,$b6,$bf,$b4,$a5,$b7,$99,$00
+	.byte $00,$00,$a7,$b5,$b8,$9a,$9b,$00
+	.byte $00,$3c,$a1,$a2,$b9,$30,$29,$00
+	.byte $00,$3e,$3f,$b6,$5d,$af,$7c,$00
+	.byte $00,$00,$27,$00,$40,$3d,$00,$00
+	.byte $00,$00,$0d,$5e,$00,$a8,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$14,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$9d,$13,$00,$00,$00
+	.byte $94,$14,$11,$00,$1d,$91,$00,$00
+	.byte $00,$00,$0a,$00,$00,$93,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $05
