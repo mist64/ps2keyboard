@@ -119,13 +119,16 @@ lc08c:	clc
 	sta kbdbyte
 	beq lc069
 
+; * simple code:   decode into PETSCII and return in .A
+; * modifier code: update modifier bitfield, return 0
+; * prefix code:   store for later processing, return 0
 decode_byte:
 	cmp #$e0 ; extended code
-	beq special_code
+	beq is_prefix
 	cmp #$f0 ; break code
-	beq special_code
+	beq is_prefix
 	cmp #$e1 ; pause break
-	beq special_code
+	beq is_prefix
 	cmp #$12 ; left shift
 	beq shift_down
 	cmp #$59 ; right shift
@@ -135,51 +138,54 @@ decode_byte:
 	cmp #$83 ; f7
 	beq key_f7
 	cmp #$11 ; left alt
-	bne no_modifier
+	bne is_regular_character
 ; alt down
-	lda #4 ; alt
+	lda #MODIFIER_ALT
 	.byte $2c
 ctrl_down:
-	lda #2 ; ctrl
+	lda #MODIFIER_CTRL
 	.byte $2c
 shift_down:
-	lda #1 ; shift
+	lda #MODIFIER_SHIFT
 	ora modifier
 	and #$0f
 	sta modifier
 	lda #0
 	.byte $2c
 key_f7:
-	lda #$88
+	lda #$88 ; PETSCII for f7
 	pha
 	lda #0
-	sta last_byte
-	sta last_special_code
+	sta last_code
+	sta last_prefix
 	pla
 	clc ; OK
 	rts
 
-special_code:
-	sta last_special_code
+is_prefix:
+	sta last_prefix
 lc0d7:	lda #0
-	sta last_byte
+	sta last_code
 	clc ; OK
 	rts
 
-no_modifier:
+;
+; look up a regular character from one of the four tables
+;
+is_regular_character:
 	cmp #$80
 	bcs lc0d7 ; ignore unknown code
 	tay
 	lda #0
-	sta last_byte
-	sta last_special_code
+	sta last_code
+	sta last_prefix
 	lda modifier
 	bne lc0f5
 lc0f0:	lda tab_unshifted,y
 	clc ; OK
 	rts
 lc0f5:	cmp #MODIFIER_CAPS + MODIFIER_SHIFT
-	beq lc0f0 ; also unshifted
+	beq lc0f0 ; shift cancels caps
 	cmp #MODIFIER_CTRL
 	bne lc102 ; not ctrl
 	lda tab_ctrl,y
@@ -195,28 +201,34 @@ lc10b:	and #MODIFIER_CAPS + MODIFIER_SHIFT
 	lda tab_shift,y
 	clc ; OK
 	rts
-
+;
+; key up handler
+; * simple code:   ignore, return 0
+; * pause/break:   ignore, return 0
+; * modifier code: update modifier bitfield, return 0
 decode_break:
-	cmp #$e1 ; pause break
-	beq lc142
+	cmp #$e1 ; pause/break
+	beq handle_pause_up
 	cmp #$58 ; caps lock
 	beq toggle_caps
 	cmp #$7e ; scroll lock
 	beq scroll_lock
 	cmp #$12 ; left shift
-	beq lc136
+	beq handle_shift_up
 	cmp #$59 ; right shift
-	beq lc136
+	beq handle_shift_up
 	cmp #$14 ; right ctrl
-	beq lc133
+	beq handle_ctrl_up
 	cmp #$11 ; left alt
 	bne lc13e ; unknown -> ignore
 ; left alt
 	lda #$0f - MODIFIER_ALT
 	.byte $2c
-lc133:	lda #$0f - MODIFIER_CTRL
+handle_ctrl_up:
+	lda #$0f - MODIFIER_CTRL
 	.byte $2c
-lc136:	lda #$0f - MODIFIER_SHIFT
+handle_shift_up:
+	lda #$0f - MODIFIER_SHIFT
 	and modifier
 	sta modifier
 lc13e:	lda #0
@@ -224,7 +236,8 @@ lc13e:	lda #0
 	rts
 
 ; skip 7 bytes
-lc142:	lda #0
+handle_pause_up:
+	lda #0
 	.byte $2c
 	lda #3 ; XXX unused
 	pha
@@ -311,9 +324,9 @@ lc1b3:	jsr receive_byte_jmp
 
 handle_break:
 	lda #$f1 ; ???
-	sta last_special_code
+	sta last_prefix
 	lda #0
-	sta last_byte
+	sta last_code
 	clc
 	rts
 
@@ -373,53 +386,59 @@ lc220:	pla
 	rts
 
 irq_code:
-	lda last_byte
-	bne lc22e
+	lda last_code ; we received a code last time
+	bne handle_code
+; receive code for decoding next time
 	jsr receive_byte_jmp
-	sta last_byte
+	sta last_code
 	rts
-lc22e:	lda last_special_code
-	bne lc23f
-	lda last_byte
+handle_code:
+	lda last_prefix
+	bne handle_prefix
+; decode simple code and store it in queue
+	lda last_code
 	jsr decode_byte_jmp
-	beq lc23e ; unsupported -> return
+	beq :+ ; no PETSCII code -> return
 	jsr add_to_buf_jmp
-lc23e:	rts
-
-lc23f:	cmp #$f0 ; break
-	bne lc262
+:	rts
+; there as a prefix
+handle_prefix:
+	cmp #$f0 ; break
+	bne not_break
+; "break" (key up)
 	lda #0
-	sta last_special_code
-	lda last_byte
+	sta last_prefix
+	lda last_code
 	jsr decode_break_jmp
 	beq lc253
-	jsr add_to_buf_jmp
+	jsr add_to_buf_jmp ; XXX never reached
 lc253:	lda #0
-	sta last_byte
+	sta last_code
 	rts
 
 lc259:	lda #0
-	sta last_special_code
-	sta last_byte
+	sta last_prefix
+	sta last_code
 	rts
 
-lc262:	cmp #$e0 ; extended
+not_break:
+	cmp #$e0 ; extended
 	bne lc27c
 	lda #0
-	sta last_special_code
-	lda last_byte
+	sta last_prefix
+	lda last_code
 	jsr lc009
 	beq lc253
 	jsr add_to_buf_jmp
 	lda #0
-	sta last_byte
+	sta last_code
 	rts
 
 lc27c:	cmp #$f1
 	bne lc259
 	lda #0
-	sta last_special_code
-	lda last_byte
+	sta last_prefix
+	lda last_code
 	jsr lc00c
 	beq lc259
 	jsr add_to_buf_jmp
@@ -473,10 +492,14 @@ deactivate:
 
 	.byte 0,0,0,0,0,0,0
 
-last_special_code:
+; e0: "break" (key up)
+; e1: pause/break key
+; f0: extended key code
+; f1: ???
+last_prefix:
 	.byte $00
 
-last_byte:
+last_code:
 	.byte $00
 
 lc2fa:
