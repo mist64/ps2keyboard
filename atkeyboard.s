@@ -5,8 +5,8 @@
 port_ddr = 0  ; 6510 data direction register
 port_data = 1  ; 6510 data register
 
-bit_clk  =  8 ; tape: write
-bit_data = 10 ; tape: sense
+bit_clk  = $08 ; tape: write
+bit_data = $10 ; tape: sense
 
 kbdbyte  = $ff ; zero page
 
@@ -51,25 +51,26 @@ irq_ptr:
 	nop
 
 receive_byte:
+; test for badline-safe time window
 	ldy $d012
-	cpy #$f3
-	bcs lc02f
-	cpy #$18
-	bcc lc02f
+	cpy #243
+	bcs :+
+	cpy #24
+	bcc :+
 	lda #0 ; in badline area, fail
 	sec
 	rts
-
-lc02f:	lda port_ddr ; set CLK and DATA as input
+; set input, bus idle
+:	lda port_ddr ; set CLK and DATA as input
 	and #$ff-bit_clk-bit_data
 	sta port_ddr ; -> bus is idle, keyboard can start sending
 
 	lda #bit_clk+bit_data
 	ldy #32
-lc039:	cpy $d012
+:	cpy $d012
 	beq lc08c ; end of badline-free area
 	bit port_data
-	bne lc039 ; wait for CLK=0 and DATA=0 (start bit)
+	bne :- ; wait for CLK=0 and DATA=0 (start bit)
 
 	lda #bit_clk
 lc044:	bit port_data ; wait for CLK=1 (not ready)
@@ -152,7 +153,7 @@ key_f7:
 	lda #$88
 	pha
 	lda #0
-	sta modifier
+	sta last_byte
 	sta last_special_code
 	pla
 	clc ; OK
@@ -265,66 +266,72 @@ scroll_lock:
 lc17c:	clc
 	rts
 
-lc17e:	cmp #$7e
-	beq lc1af
-	cmp #$f0
-	beq lc1c0
-	cmp #$4a
-	beq lc1ab
-	cmp #$5a
-	beq lc1a8
-	cmp #$12
-	beq lc1cc
-	cmp #$14
+lc17e:	cmp #$7e ; scroll lock
+	beq scroll_lock2
+	cmp #$f0 ; break
+	beq handle_break
+	cmp #$4a; '/'
+	beq key_slash
+	cmp #$5a ; enter
+	beq key_enter
+	cmp #$12 ; left shift
+	beq handle_lshift
+	cmp #$14 ; left ctrl
 	beq lc19d
-	cmp #$11
+	cmp #$11 ; left alt
 	bne lc1da
-	lda #4
+; left alt
+	lda #MODIFIER_ALT
 	.byte $2c
-lc19d:	lda #2
+lc19d:	lda #MODIFIER_CTRL
 	ora modifier
 	sta modifier
 lc1a5:	lda #0
 	.byte $2c
-lc1a8:	lda #$0d
+key_enter:
+	lda #$0d ; RETURN
 	.byte $2c
-lc1ab:	lda #$2f
-	clc
+key_slash:
+	lda #$2f ; '/'
+	clc ; OK
 	rts
 
-lc1af:	txa
+scroll_lock2:
+	txa
 	pha
 	ldx #6
 lc1b3:	jsr receive_byte_jmp
 	beq lc1b3
 	dex
-	bne lc1b3
+	bne lc1b3 ; skip 6 non-empty bytes
 	pla
 	tax
 	lda #$ff
 	rts
 
-lc1c0:	lda #$f1
+handle_break:
+	lda #$f1 ; ???
 	sta last_special_code
 	lda #0
 	sta last_byte
 	clc
 	rts
 
-lc1cc:	jsr receive_byte_jmp
-	beq lc1cc
+handle_lshift:
+	jsr receive_byte_jmp
+	beq handle_lshift
 lc1d1:	jsr receive_byte_jmp
-	beq lc1d1
+	beq lc1d1 ; skip any number of zero bytes
 	lda #0
-	clc
+	clc ; OK
 	rts
 
-lc1da:	cmp #$68
+lc1da:	cmp #$68 ; check for keypad keys
 	bcc lc1a5
 	cmp #$80
 	bcs lc1a5
 	tay
-	lda lc4a0,y
+	lda tab_keypad,y
 	clc
 	rts
 
@@ -342,13 +349,13 @@ lc1f9:	jsr receive_byte_jmp
 	clc
 	rts
 
-lc202:	lda #$0d
+lc202:	lda #MODIFIER_CAPS+MODIFIER_ALT+MODIFIER_SHIFT
 	.byte $2c
-lc205:	lda #$0b
+lc205:	lda #MODIFIER_CAPS+MODIFIER_CTRL+MODIFIER_SHIFT
 	and modifier
 	sta modifier
 lc20d:	lda #0
-	clc
+	clc ; OK
 	rts
 
 add_to_buf:
@@ -539,7 +546,8 @@ tab_alt:
 	.byte $00,$00,$00,$00,$00,$00,$7e,$00
 	.byte $00,$00,$00,$00,$00,$ab,$81,$00
 	.byte $00,$00,$ad,$ae,$b0,$b3,$95,$00
-lc4a0:	.byte $00,$bc,$bd,$ac,$b1,$97,$96,$00
+tab_keypad:
+	.byte $00,$bc,$bd,$ac,$b1,$97,$96,$00
 	.byte $00,$20,$be,$bb,$a3,$b2,$98,$00
 	.byte $00,$b6,$bf,$b4,$a5,$b7,$99,$00
 	.byte $00,$00,$a7,$b5,$b8,$9a,$9b,$00
