@@ -25,37 +25,42 @@ EXTENDED_BREAK_PREFIX = $f1 ; actually $e0 $f0, but combined in this code
 .addr   *+2
 .segment "CODE"
 
-receive_byte_jmp:
+j_receive_byte:
 	jmp receive_byte
 
-decode_byte_jmp:
-	jmp decode_byte
+j_decode_regular_key_down:
+	jmp decode_regular_key_down
 
-decode_break_jmp:
-	jmp decode_break
+j_decode_regular_key_up:
+	jmp decode_regular_key_up
 
-decode_extended_jmp:
-	jmp decode_extended
+j_decode_extended_key_down:
+	jmp decode_extended_key_down
 
-decode_extended_break_jmp:
-	jmp decode_extended_break
+j_decode_extended_key_up:
+	jmp decode_extended_key_up
 
-add_to_buf_jmp:
+j_add_to_buf:
 	jmp add_to_buf
 
 irq_code_jmp:
 	jmp irq_code
 
+; SYS 49173
 	jmp activate
+; SYS 49176
 	jmp deactivate
 
-	.byte $4c
+	.byte $4c ; XXX
 irq_ptr:
 	.addr irq_handler
 
-	nop
-	nop
+	nop ; XXX
+	nop ; XXX
 
+;****************************************
+; RECEIVE BYTE
+;****************************************
 receive_byte:
 ; test for badline-safe time window
 	ldy $d012
@@ -125,10 +130,13 @@ lc08c:	clc
 	sta kbdbyte
 	beq lc069
 
+;****************************************
+; REGULAR KEY DOWN
+;****************************************
 ; * simple code:   decode into PETSCII and return in .A
 ; * modifier code: update modifier bitfield, return 0
 ; * prefix code:   store for later processing, return 0
-decode_byte:
+decode_regular_key_down:
 	cmp #EXTENDED_PREFIX
 	beq is_prefix
 	cmp #BREAK_PREFIX
@@ -207,12 +215,15 @@ lc10b:	and #MODIFIER_CAPS + MODIFIER_SHIFT
 	lda tab_shift,y
 	clc ; OK
 	rts
-;
+
+;****************************************
+; REGULAR KEY UP
+;****************************************
 ; key up handler
 ; * simple code:   ignore, return 0
 ; * pause/break:   ignore, return 0
 ; * modifier code: update modifier bitfield, return 0
-decode_break:
+decode_regular_key_up:
 	cmp #$e1 ; pause/break
 	beq handle_pause_up
 	cmp #$58 ; caps lock
@@ -250,7 +261,7 @@ handle_pause_up:
 	txa
 	pha
 	ldx #7
-lc14c:	jsr receive_byte_jmp
+lc14c:	jsr j_receive_byte
 	beq lc14c
 	dex
 	bne lc14c ; skip 7 non-empty bytes
@@ -272,20 +283,23 @@ toggle_caps:
 	rts
 
 scroll_lock:
-	lda lc2fa
+	lda scroll_lock_state
 	eor #$80
-	sta lc2fa
+	sta scroll_lock_state
 	nop ; XXX
 	nop ; XXX
 	nop ; XXX
 	lda #$13 ; XOFF (PETSCII: HOME)
-	ldy lc2fa
-	bmi lc17c
+	ldy scroll_lock_state
+	bmi :+
 	lda #$11 ; XON (PETSCII: CSR DOWN)
-lc17c:	clc
+:	clc
 	rts
 
-decode_extended:
+;****************************************
+; EXTENDED KEY DOWN
+;****************************************
+decode_extended_key_down:
 	cmp #$7e ; scroll lock
 	beq scroll_lock2
 	cmp #BREAK_PREFIX
@@ -321,7 +335,7 @@ scroll_lock2:
 	txa
 	pha
 	ldx #6
-lc1b3:	jsr receive_byte_jmp
+lc1b3:	jsr j_receive_byte
 	beq lc1b3
 	dex
 	bne lc1b3 ; skip 6 non-empty bytes
@@ -339,9 +353,9 @@ handle_break:
 	rts
 
 handle_printscreen:
-	jsr receive_byte_jmp ; skip two bytes
+	jsr j_receive_byte ; skip two bytes
 	beq handle_printscreen
-lc1d1:	jsr receive_byte_jmp
+lc1d1:	jsr j_receive_byte
 	beq lc1d1
 	lda #0
 	clc ; OK
@@ -356,16 +370,19 @@ lc1da:	cmp #$68 ; check for keypad keys
 	clc
 	rts
 
-decode_extended_break:
+;****************************************
+; EXTENDED KEY UP
+;****************************************
+decode_extended_key_up:
 	cmp #$14
 	beq handle_break_rctrl
 	cmp #$11
 	beq handle_break_ralt
 	cmp #$12 ; print screen
 	bne lc20d
-lc1f4:	jsr receive_byte_jmp ; skip 2 bytes
+lc1f4:	jsr j_receive_byte ; skip 2 bytes
 	beq lc1f4
-lc1f9:	jsr receive_byte_jmp
+lc1f9:	jsr j_receive_byte
 	beq lc1f9
 	lda #0
 	clc
@@ -382,6 +399,9 @@ lc20d:	lda #0
 	clc ; OK
 	rts
 
+;****************************************
+; ADD CHAR TO KBD BUFFER
+;****************************************
 add_to_buf:
 	pha
 	lda $c6 ; length of keyboard buffer
@@ -396,38 +416,44 @@ add_to_buf:
 lc220:	pla
 	rts
 
+;****************************************
+; IRQ CODE
+;****************************************
 irq_code:
 	lda last_code ; we have a code
 	bne handle_code
 ; receive code for decoding next time
-	jsr receive_byte_jmp
+	jsr j_receive_byte
 	sta last_code
 	rts
 handle_code:
 	lda last_prefix
 	bne handle_prefix ; we have a prefix and a code
+;****************************************
+; IRQ CODE: REGULAR KEY DOWN
+;****************************************
 ; decode simple code and store it in queue
 	lda last_code
-	jsr decode_byte_jmp
+	jsr j_decode_regular_key_down
 	beq :+ ; no PETSCII code -> return
-	jsr add_to_buf_jmp
+	jsr j_add_to_buf
 :	rts
 ; there as a prefix, and a code
 handle_prefix:
 	cmp #BREAK_PREFIX
 	bne not_break
-;
-; "break" (key up)
-;
+;****************************************
+; IRQ CODE: REGULAR KEY UP
+;****************************************
 	lda #0
 	sta last_prefix
 	lda last_code
-	jsr decode_break_jmp
+	jsr j_decode_regular_key_up
 	beq lc253
 ; XXX in theory, a key-up event could return a character
 ; XXX to put into the queue, but this doesn't happen in
 ; XXX pratice
-	jsr add_to_buf_jmp
+	jsr j_add_to_buf
 lc253:	lda #0
 	sta last_code
 	rts
@@ -440,33 +466,37 @@ lc259:	lda #0
 not_break:
 	cmp #EXTENDED_PREFIX
 	bne lc27c
-;
-; extended key
-;
+;****************************************
+; IRQ CODE: EXTENDED KEY DOWN
+;****************************************
 	lda #0
 	sta last_prefix
 	lda last_code
-	jsr decode_extended_jmp
+	jsr j_decode_extended_key_down
 	beq lc253
-	jsr add_to_buf_jmp
+	jsr j_add_to_buf
 	lda #0
 	sta last_code
 	rts
 
 lc27c:	cmp #EXTENDED_BREAK_PREFIX
 	bne lc259
-;
-; extended break prefix
-;
+;****************************************
+; IRQ CODE: EXTENDED KEY UP
+;****************************************
 	lda #0
 	sta last_prefix
 	lda last_code
-	jsr decode_extended_break_jmp
+	jsr j_decode_extended_key_up
 	beq lc259
-	jsr add_to_buf_jmp
+; XXX see above, this is not reached
+	jsr j_add_to_buf
 	clc
 	bcc lc259
 
+;****************************************
+; ACTIVATE
+;****************************************
 activate:
 	sei
 	lda irq_ptr
@@ -484,11 +514,17 @@ activate:
 	cli
 	rts
 
+;****************************************
+; IRQ HANDLER
+;****************************************
 irq_handler:
 	jsr irq_code_jmp
 	inc $d019 ; ack IRQ
 	jmp kernal_irq_ret
 
+;****************************************
+; DEACTIVATE
+;****************************************
 deactivate:
 	sei
 	lda #<kernal_irq_ret
@@ -512,7 +548,7 @@ deactivate:
 	cli
 	rts
 
-	.byte 0,0,0,0,0,0,0
+	.byte 0,0,0,0,0,0,0 ; XXX
 
 ; e0: "break" (key up)
 ; e1: pause/break key
@@ -524,13 +560,13 @@ last_prefix:
 last_code:
 	.byte $00
 
-lc2fa:
+scroll_lock_state:
 	.byte $80
 
 modifier:
 	.byte $00
 
-	.byte $00,$00,$00,$00
+	.byte 0,0,0,0 ; XXX
 
 tab_unshifted:
 	.byte $00,$00,$00,$87,$86,$85,$89,$00
