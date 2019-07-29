@@ -20,7 +20,9 @@ MODIFIER_SHIFT = 1
 EXTENDED_PREFIX       = $e0
 PAUSE_PREFIX          = $e1
 BREAK_PREFIX          = $f0
-EXTENDED_BREAK_PREFIX = $f1 ; actually $e0 $f0, but combined in this code
+EXTENDED_BREAK_PREFIX = $f1
+; The break prefix for extended codes sent by the keuboard is $e0 $f0.
+; This code stores $f1 into the last_prefix byte.
 
 PETSCII_F1 = $85
 PETSCII_F2 = $89
@@ -310,10 +312,13 @@ scroll_lock:
 ; EXTENDED KEY DOWN
 ;****************************************
 decode_extended_key_down:
-	cmp #$7e ; scroll lock
-	beq scroll_lock2
+	cmp #$7e ; ctrl+pause
+	beq ctrl_pause
 	cmp #BREAK_PREFIX
 	beq handle_break
+; The extended codes are $11/$12/$14/$4A/$5A and $69-$7D,
+; so we check for the first set one by one, and then we use
+; a table for the second set.
 	cmp #$4a; keypad '/'
 	beq key_slash
 	cmp #$5a ; keypad enter
@@ -341,14 +346,14 @@ key_slash:
 	clc ; OK
 	rts
 
-scroll_lock2:
+ctrl_pause: ; skip 6 non-empty bytes
 	txa
 	pha
 	ldx #6
 lc1b3:	jsr j_receive_byte
 	beq lc1b3
 	dex
-	bne lc1b3 ; skip 6 non-empty bytes
+	bne lc1b3
 	pla
 	tax
 	lda #$ff
@@ -362,8 +367,8 @@ handle_break:
 	clc
 	rts
 
-handle_printscreen:
-	jsr j_receive_byte ; skip two bytes
+handle_printscreen: ; skip two bytes
+	jsr j_receive_byte
 	beq handle_printscreen
 lc1d1:	jsr j_receive_byte
 	beq lc1d1
@@ -376,7 +381,7 @@ lc1da:	cmp #$68 ; check for keypad keys
 	cmp #$80
 	bcs lc1a5
 	tay
-	lda tab_keypad,y
+	lda tab_keypad-$68,y
 	clc
 	rts
 
@@ -385,9 +390,9 @@ lc1da:	cmp #$68 ; check for keypad keys
 ;****************************************
 decode_extended_key_up:
 	cmp #$14
-	beq handle_break_rctrl
+	beq handle_rctrl_up
 	cmp #$11
-	beq handle_break_ralt
+	beq handle_ralt_up
 	cmp #$12 ; print screen
 	bne lc20d
 lc1f4:	jsr j_receive_byte ; skip 2 bytes
@@ -398,10 +403,10 @@ lc1f9:	jsr j_receive_byte
 	clc
 	rts
 
-handle_break_rctrl:
+handle_rctrl_up:
 	lda #$0f - MODIFIER_CTRL
 	.byte $2c
-handle_break_ralt:
+handle_ralt_up:
 	lda #$0f - MODIFIER_ALT
 	and modifier
 	sta modifier
@@ -475,7 +480,7 @@ lc259:	lda #0
 
 not_break:
 	cmp #EXTENDED_PREFIX
-	bne lc27c
+	bne not_extended
 ;****************************************
 ; IRQ CODE: EXTENDED KEY DOWN
 ;****************************************
@@ -489,7 +494,8 @@ not_break:
 	sta last_code
 	rts
 
-lc27c:	cmp #EXTENDED_BREAK_PREFIX
+not_extended:
+	cmp #EXTENDED_BREAK_PREFIX
 	bne lc259
 ;****************************************
 ; IRQ CODE: EXTENDED KEY UP
@@ -560,10 +566,6 @@ deactivate:
 
 	.byte 0,0,0,0,0,0,0 ; XXX
 
-; e0: "break" (key up)
-; e1: pause key
-; f0: extended key code
-; f1: extended break prefix (virtual code)
 last_prefix:
 	.byte $00
 
@@ -637,7 +639,6 @@ tab_alt:
 	.byte $00,$00,$00,$00,$00,$00,$7e,$00
 	.byte $00,$00,$00,$00,$00,$ab,$81,$00
 	.byte $00,$00,$ad,$ae,$b0,$b3,$95,$00
-tab_keypad:
 	.byte $00,$bc,$bd,$ac,$b1,$97,$96,$00
 	.byte $00,$20,$be,$bb,$a3,$b2,$98,$00
 	.byte $00,$b6,$bf,$b4,$a5,$b7,$99,$00
@@ -650,16 +651,19 @@ tab_keypad:
 	.byte $00,$00,$00,$00,$00,$00,$00,$00
 	.byte $00,$00,$00,$00,$00,$00,$00,$00
 	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$9d,$13,$00,$00,$00
-	.byte $94,$14,$11,$00,$1d,$91,$00,$00
-	.byte $00,$00,$0a,$00,$00,$93,$00,$00
 
-	.byte $00,$00,$00,$00,$00,$00,$00,$00 ; XXX
-	.byte $00,$00,$00,$00,$00,$00,$00,$00 ; XXX
-	.byte $00,$00,$00,$00,$00,$00,$00,$00 ; XXX
-	.byte $00,$00,$00,$00,$00,$00,$00,$00 ; XXX
-	.byte $05 ; XXX
+	.byte 0,0,0,0,0,0,0,0 ; XXX
+
+tab_keypad:
+	.byte $00,$00,$00,$9d,$13,$00,$00,$00 ; @$68
+	.byte $94,$14,$11,$00,$1d,$91,$00,$00 ; @$70
+	.byte $00,$00,$0a,$00,$00,$93,$00,$00 ; @$78
+
+	.byte 0,0,0,0,0,0,0,0 ; XXX
+	.byte 0,0,0,0,0,0,0,0 ; XXX
+	.byte 0,0,0,0,0,0,0,0 ; XXX
+	.byte 0,0,0,0,0,0,0,0 ; XXX
+	.byte 5 ; XXX
 
 ; Make Code     Break Code          Key
 ;---------------------------------------------
@@ -764,3 +768,4 @@ tab_keypad:
 ; E0 7A         E0 F0 7A            Page Down
 ; E0 7D         E0 F0 7D            Page Up
 ; E1 14 77 E1   F0 14 F0 77         Pause Break
+; E0 7E E0 F0 7E                    Ctrl + Pause
