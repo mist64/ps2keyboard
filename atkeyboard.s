@@ -18,6 +18,7 @@ MODIFIER_CTRL = 2
 MODIFIER_SHIFT = 1
 
 EXTENDED_PREFIX       = $e0
+PAUSE_PREFIX          = $e1
 BREAK_PREFIX          = $f0
 EXTENDED_BREAK_PREFIX = $f1 ; actually $e0 $f0, but combined in this code
 
@@ -147,11 +148,11 @@ lc08c:	clc
 ; * prefix code:   store for later processing, return 0
 decode_regular_key_down:
 	cmp #EXTENDED_PREFIX
-	beq is_prefix
+	beq store_prefix
 	cmp #BREAK_PREFIX
-	beq is_prefix
-	cmp #$e1 ; pause break
-	beq is_prefix
+	beq store_prefix
+	cmp #PAUSE_PREFIX
+	beq store_prefix
 	cmp #$12 ; left shift
 	beq shift_down
 	cmp #$59 ; right shift
@@ -185,7 +186,7 @@ key_f7:
 	clc ; OK
 	rts
 
-is_prefix:
+store_prefix:
 	sta last_prefix
 lc0d7:	lda #0
 	sta last_code
@@ -230,10 +231,10 @@ lc10b:	and #MODIFIER_CAPS + MODIFIER_SHIFT
 ;****************************************
 ; key up handler
 ; * simple code:   ignore, return 0
-; * pause/break:   ignore, return 0
+; * pause:         ignore, return 0
 ; * modifier code: update modifier bitfield, return 0
 decode_regular_key_up:
-	cmp #$e1 ; pause/break
+	cmp #PAUSE_PREFIX
 	beq handle_pause_up
 	cmp #$58 ; caps lock
 	beq toggle_caps
@@ -560,7 +561,7 @@ deactivate:
 	.byte 0,0,0,0,0,0,0 ; XXX
 
 ; e0: "break" (key up)
-; e1: pause/break key
+; e1: pause key
 ; f0: extended key code
 ; f1: extended break prefix (virtual code)
 last_prefix:
@@ -653,8 +654,113 @@ tab_keypad:
 	.byte $00,$00,$00,$9d,$13,$00,$00,$00
 	.byte $94,$14,$11,$00,$1d,$91,$00,$00
 	.byte $00,$00,$0a,$00,$00,$93,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $05
+
+	.byte $00,$00,$00,$00,$00,$00,$00,$00 ; XXX
+	.byte $00,$00,$00,$00,$00,$00,$00,$00 ; XXX
+	.byte $00,$00,$00,$00,$00,$00,$00,$00 ; XXX
+	.byte $00,$00,$00,$00,$00,$00,$00,$00 ; XXX
+	.byte $05 ; XXX
+
+; Make Code     Break Code          Key
+;---------------------------------------------
+; 01            F0 01               F9
+; 03            F0 03               F5
+; 04            F0 04               F3
+; 05            F0 05               F1
+; 06            F0 06               F2
+; 07            F0 07               F12
+; 09            F0 09               F10
+; 0A            F0 0A               F8
+; 0B            F0 0B               F6
+; 0C            F0 0C               F4
+; 0D            F0 0D               Tab
+; 0E            F0 0E               `
+; 11            F0 11               Left Alt
+; 12            F0 12               Left Shift
+; 14            F0 14               Left Ctrl
+; 15            F0 15               q
+; 16            F0 16               1
+; 1A            F0 1A               z
+; 1B            F0 1B               s
+; 1C            F0 1C               a
+; 1D            F0 1D               w
+; 1E            F0 1E               2
+; 21            F0 21               c
+; 22            F0 22               x
+; 23            F0 23               d
+; 24            F0 24               e
+; 25            F0 25               4
+; 26            F0 26               3
+; 29            F0 29               Spacebar
+; 2A            F0 2A               v
+; 2B            F0 2B               f
+; 2C            F0 2C               t
+; 2D            F0 2D               r
+; 2E            F0 2E               5
+; 31            F0 31               n
+; 32            F0 32               b
+; 33            F0 33               h
+; 34            F0 34               g
+; 35            F0 35               y
+; 36            F0 36               6
+; 3A            F0 3A               m
+; 3B            F0 3B               j
+; 3C            F0 3C               u
+; 3D            F0 3D               7
+; 3E            F0 3E               8
+; 41            F0 41               ,
+; 42            F0 42               k
+; 43            F0 43               i
+; 44            F0 44               o
+; 45            F0 45               0
+; 46            F0 46               9
+; 49            F0 49               .
+; 4A            F0 4A               /
+; 4B            F0 4B               l
+; 4C            F0 4C               ;
+; 4D            F0 4D               p
+; 4E            F0 4E               -
+; 52            F0 52               "
+; 54            F0 54               [
+; 55            F0 55               =
+; 58            F0 58               Caps Lock
+; 59            F0 59               Right Shift
+; 5A            F0 5A               Enter
+; 5B            F0 5B               ]
+; 5D            F0 5D               \
+; 66            F0 66               Backspace
+; 69            F0 69               Keypad 1
+; 6B            F0 6B               Keypad 4
+; 6C            F0 6C               Keypad 7
+; 70            F0 70               Keypad 0
+; 71            F0 71               Keypad .
+; 72            F0 72               Keypad 2
+; 73            F0 73               Keypad 5
+; 74            F0 74               Keypad 6
+; 75            F0 75               Keypad 8
+; 76            F0 76               Esc
+; 77            F0 77               Num Lock
+; 78            F0 78               F11
+; 79            F0 79               Keypad +
+; 7A            F0 7A               Keypad 3
+; 7B            F0 7B               Keypad -
+; 7C            F0 7C               Keypad *
+; 7D            F0 7D               Keypad 9
+; 7E            F0 7E               Scroll Lock
+; 83            F0 83               F7
+; E0 11         E0 F0 11            Right Alt
+; E0 12 E0 7C   E0 F0 7C E0 F0 12   Print Screen
+; E0 14         E0 F0 14            Right Ctrl
+; E0 4A         E0 F0 4A            Keypad /
+; E0 5A         E0 F0 5A            Keypad Enter
+; E0 69         E0 F0 69            End
+; E0 6B         E0 F0 6B            Left Arrow
+; E0 6C         E0 F0 6C            Home
+; E0 70         E0 F0 70            Insert
+; E0 71         E0 F0 71            Delete
+; E0 72         E0 F0 72            Down Arrow
+; E0 74         E0 F0 74            Right Arrow
+; E0 75         E0 F0 75            Up Arrow
+; E0 7A         E0 F0 7A            Page Down
+; E0 7D         E0 F0 7D            Page Up
+; E1 14 77 E1   F0 14 F0 77         Pause Break
