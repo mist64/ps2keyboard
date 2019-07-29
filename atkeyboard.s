@@ -17,6 +17,10 @@ MODIFIER_ALT = 4
 MODIFIER_CTRL = 2
 MODIFIER_SHIFT = 1
 
+EXTENDED_PREFIX       = $e0
+BREAK_PREFIX          = $f0
+EXTENDED_BREAK_PREFIX = $f1 ; actually $e0 $f0, but combined in this code
+
 .segment        "LOADADDR"
 .addr   *+2
 .segment "CODE"
@@ -30,9 +34,11 @@ decode_byte_jmp:
 decode_break_jmp:
 	jmp decode_break
 
-lc009:	jmp lc17e
+decode_extended_jmp:
+	jmp decode_extended
 
-lc00c:	jmp lc1e8
+decode_extended_break_jmp:
+	jmp decode_extended_break
 
 add_to_buf_jmp:
 	jmp add_to_buf
@@ -123,9 +129,9 @@ lc08c:	clc
 ; * modifier code: update modifier bitfield, return 0
 ; * prefix code:   store for later processing, return 0
 decode_byte:
-	cmp #$e0 ; extended code
+	cmp #EXTENDED_PREFIX
 	beq is_prefix
-	cmp #$f0 ; break code
+	cmp #BREAK_PREFIX
 	beq is_prefix
 	cmp #$e1 ; pause break
 	beq is_prefix
@@ -279,24 +285,26 @@ scroll_lock:
 lc17c:	clc
 	rts
 
-lc17e:	cmp #$7e ; scroll lock
+decode_extended:
+	cmp #$7e ; scroll lock
 	beq scroll_lock2
-	cmp #$f0 ; break
+	cmp #BREAK_PREFIX
 	beq handle_break
-	cmp #$4a; '/'
+	cmp #$4a; keypad '/'
 	beq key_slash
-	cmp #$5a ; enter
+	cmp #$5a ; keypad enter
 	beq key_enter
-	cmp #$12 ; left shift
-	beq handle_lshift
-	cmp #$14 ; left ctrl
-	beq lc19d
-	cmp #$11 ; left alt
+	cmp #$12
+	beq handle_printscreen
+	cmp #$14 ; right ctrl
+	beq handle_rctrl
+	cmp #$11 ; right alt
 	bne lc1da
-; left alt
+; right alt
 	lda #MODIFIER_ALT
 	.byte $2c
-lc19d:	lda #MODIFIER_CTRL
+handle_rctrl:
+	lda #MODIFIER_CTRL
 	ora modifier
 	sta modifier
 lc1a5:	lda #0
@@ -323,18 +331,18 @@ lc1b3:	jsr receive_byte_jmp
 	rts
 
 handle_break:
-	lda #$f1 ; ???
+	lda #EXTENDED_BREAK_PREFIX
 	sta last_prefix
 	lda #0
 	sta last_code
 	clc
 	rts
 
-handle_lshift:
-	jsr receive_byte_jmp
-	beq handle_lshift
+handle_printscreen:
+	jsr receive_byte_jmp ; skip two bytes
+	beq handle_printscreen
 lc1d1:	jsr receive_byte_jmp
-	beq lc1d1 ; skip any number of zero bytes
+	beq lc1d1
 	lda #0
 	clc ; OK
 	rts
@@ -348,13 +356,14 @@ lc1da:	cmp #$68 ; check for keypad keys
 	clc
 	rts
 
-lc1e8:	cmp #$14
-	beq lc202
+decode_extended_break:
+	cmp #$14
+	beq handle_break_rctrl
 	cmp #$11
-	beq lc205
-	cmp #$12
+	beq handle_break_ralt
+	cmp #$12 ; print screen
 	bne lc20d
-lc1f4:	jsr receive_byte_jmp
+lc1f4:	jsr receive_byte_jmp ; skip 2 bytes
 	beq lc1f4
 lc1f9:	jsr receive_byte_jmp
 	beq lc1f9
@@ -362,9 +371,11 @@ lc1f9:	jsr receive_byte_jmp
 	clc
 	rts
 
-lc202:	lda #MODIFIER_CAPS+MODIFIER_ALT+MODIFIER_SHIFT
+handle_break_rctrl:
+	lda #$0f - MODIFIER_CTRL
 	.byte $2c
-lc205:	lda #MODIFIER_CAPS+MODIFIER_CTRL+MODIFIER_SHIFT
+handle_break_ralt:
+	lda #$0f - MODIFIER_ALT
 	and modifier
 	sta modifier
 lc20d:	lda #0
@@ -386,7 +397,7 @@ lc220:	pla
 	rts
 
 irq_code:
-	lda last_code ; we received a code last time
+	lda last_code ; we have a code
 	bne handle_code
 ; receive code for decoding next time
 	jsr receive_byte_jmp
@@ -394,24 +405,29 @@ irq_code:
 	rts
 handle_code:
 	lda last_prefix
-	bne handle_prefix
+	bne handle_prefix ; we have a prefix and a code
 ; decode simple code and store it in queue
 	lda last_code
 	jsr decode_byte_jmp
 	beq :+ ; no PETSCII code -> return
 	jsr add_to_buf_jmp
 :	rts
-; there as a prefix
+; there as a prefix, and a code
 handle_prefix:
-	cmp #$f0 ; break
+	cmp #BREAK_PREFIX
 	bne not_break
+;
 ; "break" (key up)
+;
 	lda #0
 	sta last_prefix
 	lda last_code
 	jsr decode_break_jmp
 	beq lc253
-	jsr add_to_buf_jmp ; XXX never reached
+; XXX in theory, a key-up event could return a character
+; XXX to put into the queue, but this doesn't happen in
+; XXX pratice
+	jsr add_to_buf_jmp
 lc253:	lda #0
 	sta last_code
 	rts
@@ -422,24 +438,30 @@ lc259:	lda #0
 	rts
 
 not_break:
-	cmp #$e0 ; extended
+	cmp #EXTENDED_PREFIX
 	bne lc27c
+;
+; extended key
+;
 	lda #0
 	sta last_prefix
 	lda last_code
-	jsr lc009
+	jsr decode_extended_jmp
 	beq lc253
 	jsr add_to_buf_jmp
 	lda #0
 	sta last_code
 	rts
 
-lc27c:	cmp #$f1
+lc27c:	cmp #EXTENDED_BREAK_PREFIX
 	bne lc259
+;
+; extended break prefix
+;
 	lda #0
 	sta last_prefix
 	lda last_code
-	jsr lc00c
+	jsr decode_extended_break_jmp
 	beq lc259
 	jsr add_to_buf_jmp
 	clc
@@ -495,7 +517,7 @@ deactivate:
 ; e0: "break" (key up)
 ; e1: pause/break key
 ; f0: extended key code
-; f1: ???
+; f1: extended break prefix (virtual code)
 last_prefix:
 	.byte $00
 
