@@ -1,6 +1,6 @@
-; AT-Keyboard by İlker Fıçıcılar, 1997
+; ps2keyboard by Michael Steil
 ;
-; reverse-engineered by Michael Steil <mist64@mac.com>, 2019
+; based on "AT-Keyboard" by İlker Fıçıcılar
 
 port_ddr = 0  ; 6510 data direction register
 port_data = 1  ; 6510 data register
@@ -37,38 +37,10 @@ PETSCII_F8 = $8C
 .addr   *+2
 .segment "CODE"
 
-j_receive_byte:
-	jmp receive_byte
-
-j_decode_regular_key_down:
-	jmp decode_regular_key_down
-
-j_decode_regular_key_up:
-	jmp decode_regular_key_up
-
-j_decode_extended_key_down:
-	jmp decode_extended_key_down
-
-j_decode_extended_key_up:
-	jmp decode_extended_key_up
-
-j_add_to_buf:
-	jmp add_to_buf
-
-irq_code_jmp:
-	jmp irq_code
-
-; SYS 49173
+; SYS 49152
 	jmp activate
-; SYS 49176
+; SYS 49155
 	jmp deactivate
-
-	.byte $4c ; XXX
-irq_ptr:
-	.addr irq_handler
-
-	nop ; XXX
-	nop ; XXX
 
 ;****************************************
 ; RECEIVE BYTE
@@ -266,20 +238,16 @@ lc13e:	lda #0
 
 ; skip 7 bytes
 handle_pause_up:
-	lda #0
-	.byte $2c
-	lda #3 ; XXX unused
-	pha
 	txa
 	pha
 	ldx #7
-lc14c:	jsr j_receive_byte
+lc14c:	jsr receive_byte
 	beq lc14c
 	dex
 	bne lc14c ; skip 7 non-empty bytes
 	pla
 	tax
-	pla
+	lda #0
 	clc
 	rts
 
@@ -287,9 +255,6 @@ toggle_caps:
 	lda modifier
 	eor #8
 	sta modifier
-	nop ; XXX
-	nop ; XXX
-	nop ; XXX
 	lda #0
 	clc ; OK
 	rts
@@ -298,9 +263,6 @@ scroll_lock:
 	lda scroll_lock_state
 	eor #$80
 	sta scroll_lock_state
-	nop ; XXX
-	nop ; XXX
-	nop ; XXX
 	lda #$13 ; XOFF (PETSCII: HOME)
 	ldy scroll_lock_state
 	bmi :+
@@ -350,7 +312,7 @@ ctrl_pause: ; skip 6 non-empty bytes
 	txa
 	pha
 	ldx #6
-lc1b3:	jsr j_receive_byte
+lc1b3:	jsr receive_byte
 	beq lc1b3
 	dex
 	bne lc1b3
@@ -368,9 +330,9 @@ handle_break:
 	rts
 
 handle_printscreen: ; skip two bytes
-	jsr j_receive_byte
+	jsr receive_byte
 	beq handle_printscreen
-lc1d1:	jsr j_receive_byte
+lc1d1:	jsr receive_byte
 	beq lc1d1
 	lda #0
 	clc ; OK
@@ -395,9 +357,9 @@ decode_extended_key_up:
 	beq handle_ralt_up
 	cmp #$12 ; print screen
 	bne lc20d
-lc1f4:	jsr j_receive_byte ; skip 2 bytes
+lc1f4:	jsr receive_byte ; skip 2 bytes
 	beq lc1f4
-lc1f9:	jsr j_receive_byte
+lc1f9:	jsr receive_byte
 	beq lc1f9
 	lda #0
 	clc
@@ -438,7 +400,7 @@ irq_code:
 	lda last_code ; we have a code
 	bne handle_code
 ; receive code for decoding next time
-	jsr j_receive_byte
+	jsr receive_byte
 	sta last_code
 	rts
 handle_code:
@@ -449,9 +411,9 @@ handle_code:
 ;****************************************
 ; decode simple code and store it in queue
 	lda last_code
-	jsr j_decode_regular_key_down
+	jsr decode_regular_key_down
 	beq :+ ; no PETSCII code -> return
-	jsr j_add_to_buf
+	jsr add_to_buf
 :	rts
 ; there as a prefix, and a code
 handle_prefix:
@@ -463,12 +425,7 @@ handle_prefix:
 	lda #0
 	sta last_prefix
 	lda last_code
-	jsr j_decode_regular_key_up
-	beq lc253
-; XXX in theory, a key-up event could return a character
-; XXX to put into the queue, but this doesn't happen in
-; XXX pratice
-	jsr j_add_to_buf
+	jsr decode_regular_key_up
 lc253:	lda #0
 	sta last_code
 	rts
@@ -487,9 +444,9 @@ not_break:
 	lda #0
 	sta last_prefix
 	lda last_code
-	jsr j_decode_extended_key_down
+	jsr decode_extended_key_down
 	beq lc253
-	jsr j_add_to_buf
+	jsr add_to_buf
 	lda #0
 	sta last_code
 	rts
@@ -503,21 +460,17 @@ not_extended:
 	lda #0
 	sta last_prefix
 	lda last_code
-	jsr j_decode_extended_key_up
+	jsr decode_extended_key_up
 	beq lc259
-; XXX see above, this is not reached
-	jsr j_add_to_buf
-	clc
-	bcc lc259
 
 ;****************************************
 ; ACTIVATE
 ;****************************************
 activate:
 	sei
-	lda irq_ptr
+	lda #<irq_handler
 	sta $0314
-	lda irq_ptr+1
+	lda #>irq_handler
 	sta $0315
 	lda #1 ; set up raster IRQ
 	sta $d01a
@@ -534,7 +487,7 @@ activate:
 ; IRQ HANDLER
 ;****************************************
 irq_handler:
-	jsr irq_code_jmp
+	jsr irq_code
 	inc $d019 ; ack IRQ
 	jmp kernal_irq_ret
 
@@ -564,8 +517,6 @@ deactivate:
 	cli
 	rts
 
-	.byte 0,0,0,0,0,0,0 ; XXX
-
 last_prefix:
 	.byte $00
 
@@ -577,8 +528,6 @@ scroll_lock_state:
 
 modifier:
 	.byte $00
-
-	.byte 0,0,0,0 ; XXX
 
 tab_unshifted:
 	.byte $00,$00,$00,PETSCII_F5,PETSCII_F3,PETSCII_F1,PETSCII_F2,$00
@@ -652,18 +601,10 @@ tab_alt:
 	.byte $00,$00,$00,$00,$00,$00,$00,$00
 	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
 
-	.byte 0,0,0,0,0,0,0,0 ; XXX
-
 tab_keypad:
 	.byte $00,$00,$00,$9d,$13,$00,$00,$00 ; @$68
 	.byte $94,$14,$11,$00,$1d,$91,$00,$00 ; @$70
 	.byte $00,$00,$0a,$00,$00,$93,$00,$00 ; @$78
-
-	.byte 0,0,0,0,0,0,0,0 ; XXX
-	.byte 0,0,0,0,0,0,0,0 ; XXX
-	.byte 0,0,0,0,0,0,0,0 ; XXX
-	.byte 0,0,0,0,0,0,0,0 ; XXX
-	.byte 5 ; XXX
 
 ; Make Code     Break Code          Key
 ;---------------------------------------------
