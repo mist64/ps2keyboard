@@ -10,17 +10,17 @@ bit_data = $10 ; tape: sense
 
 kbdbyte  = $ff ; zero page
 
-kernal_irq_ret = $ea31
-
 shflag     = $fc
 break_flag = $fd
 upper_byte = $fe
 
-MODIFIER_SHIFT = 1 ; C64: Shift
-MODIFIER_ALT   = 2 ; C64: Commodore
-MODIFIER_CTRL  = 4 ; C64: Ctrl
+MODIFIER_SHIFT = 1 ; C64:  Shift
+MODIFIER_ALT   = 2 ; C64:  Commodore
+MODIFIER_CTRL  = 4 ; C64:  Ctrl
 MODIFIER_WIN   = 8 ; C128: Alt
 MODIFIER_CAPS  = 16; C128: Caps
+
+HACK_STOP = 1
 
 .segment        "LOADADDR"
 .addr   *+2
@@ -31,6 +31,17 @@ MODIFIER_CAPS  = 16; C128: Caps
 ;****************************************
 activate:
 	sei
+	lda $0314
+.if HACK_STOP
+	clc
+	adc #3
+.endif
+	sta jmp_kernal_irq_ret + 1
+	lda $0315
+.if HACK_STOP
+	adc #0
+.endif
+	sta jmp_kernal_irq_ret + 2
 	lda #<irq_handler
 	sta $0314
 	lda #>irq_handler
@@ -63,33 +74,13 @@ activate:
 ; IRQ HANDLER
 ;****************************************
 irq_handler:
-	jsr kbd_driver
-
 	inc $d019 ; ack IRQ
-	jmp kernal_irq_ret
-
-hex8:
-	pha
-	lsr
-	lsr
-	lsr
-	lsr
-	jsr hex4
-	pla
-	and #15
-hex4:	tax
-	lda hextab,x
-putchar:
-	ldy #0
-	sta (2),y
-	inc 2
-	bne :+
-	inc 3
-:	rts
-hextab:	.byte "0123456789",1,2,3,4,5,6
-
-
-
+.if HACK_STOP
+	jsr $ffea       ;update jiffy clock
+.endif
+	jsr kbd_driver
+jmp_kernal_irq_ret:
+	jmp $ffff
 
 ;****************************************
 ; RECEIVE BYTE
@@ -179,10 +170,7 @@ lc08c:	clc
 
 ;****************************************
 ; RECEIVE SCANCODE:
-; out: X: scancode high
-;           0: no prefix
-;           1: E0 prefix
-;           2: E1 prefix
+; out: X: prefix (E0, E1; 0 = none)
 ;      A: scancode low (0 = none)
 ;      C:   0: key down
 ;           1: key up
@@ -201,7 +189,7 @@ rcvsc2:	cmp #$e0 ; extend prefix 1
 	cmp #$e1 ; extend prefix 2
 	bne rcvsc4
 rcvsc3:	sta upper_byte
-	beq receive_scancode
+	beq receive_scancode ; always
 rcvsc4:	cmp #$f0
 	bne rcvsc5
 	rol break_flag ; set to 1
@@ -220,10 +208,7 @@ rcvsc5:	pha
 ; * key down only
 ; * modifiers have been interpreted
 ;   and filtered
-; out: X: scancode high
-;           0: no prefix
-;           1: E0 prefix
-;           2: E1 prefix
+; out: X: prefix (E0, E1; 0 = none)
 ;      A: scancode low (0 = none)
 ;      Z: scancode available
 ;           0: yes
@@ -232,7 +217,6 @@ rcvsc5:	pha
 receive_down_scancode_no_modifiers:
 	jsr receive_scancode
 	beq no_key
-
 	php
 	jsr check_mod
 	bcc no_mod
@@ -253,6 +237,8 @@ no_key:	rts ; original Z is retained
 ; XXX handle caps lock
 
 check_mod:
+	cpx #$e1
+	beq ckmod1
 	cmp #$11 ; left alt (0011) or right alt (E011)
 	beq md_alt
 	cmp #$14 ; left ctrl (0014) or right ctrl (E014)
@@ -285,6 +271,9 @@ kbd_driver:
 	jsr receive_down_scancode_no_modifiers
 	beq drv_end
 
+	tay
+
+
 	cpx #0
 	bne down_ext
 
@@ -292,8 +281,6 @@ kbd_driver:
 	bne not_f7
 	lda #$02
 not_f7:
-
-	tay
 
 	cmp #14
 	bcs not_fkeys
@@ -321,13 +308,44 @@ bit_found:
 	sta 3
 	lda (2),y
 drv2:	beq drv_end
-	jsr add_to_buf
+drv3:	jmp add_to_buf
 
 down_ext:
-	; XXX decode extended characters
-drv_end:
+	cpx #$e1
+	bne down_ext1
 
+	lda shflag
+	lsr ; shift -> C
+	lda #3 * 2
+drv4:	ror
+	bne drv3 ; always
+
+down_ext1:
+	cmp #$4a
+	beq is_4a
+	cmp #$5a
+	bne not_5a
+	lda #13
+	bne drv3
+is_4a:	lda #'/'
+	bne drv3
+not_5a: cmp #$68
+	bcc drv_end
+	cmp #$80
+	bcs drv_end
+; special case shift+home = clr
+	cpy #$6c
+	bne nhome
+	lda shflag
+	lsr ; shift -> C
+	lda #$13 * 2; HOME
+	bne drv4 ; always
+nhome:	lda tab_extended-$68,y
+	bne drv3
+
+drv_end:
 	rts
+
 
 ;****************************************
 ; ADD CHAR TO KBD BUFFER
@@ -336,13 +354,19 @@ add_to_buf:
 	pha
 	lda $c6 ; length of keyboard buffer
 	cmp #10
-	bcs :+ ; full, ignore
+	bcs add2 ; full, ignore
 	inc $c6
 	tax
 	pla
 	sta $0277,x ; store
+	cmp #3 ; stop
+	bne add1
+	lda #$7f
+	.byte $2c
+add1:	lda #$ff
+	sta $91
 	rts
-:	pla
+add2:	pla
 	rts
 
 tables:
@@ -410,6 +434,14 @@ tab_ctrl:
 	.byte $00,$00,$00,$00,$00,$1f,$00,$00
 	.byte $00,$00,$00,$00,$00,$1c,$00,$00
 	.byte $00,$00,$00,$00,$00,$00,$00,$00
+
+tab_extended:
+	;         end      lf hom
+	.byte $00,$00,$00,$9d,$00,$00,$00,$00 ; @$68 (HOME is special cased)
+	;     ins del  dn      rt  up
+	.byte $94,$14,$11,$00,$1d,$91,$00,$00 ; @$70
+	;             pgd         pgu brk
+	.byte $00,$00,$00,$00,$00,$00,$03,$00 ; @$78
 
 ; References:
 ; * Microsoft: "Keyboard Scan Code Specification", Revision 1.3a — March 16, 2000
