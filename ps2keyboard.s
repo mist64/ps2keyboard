@@ -12,15 +12,15 @@ kbdbyte  = $ff ; zero page
 
 kernal_irq_ret = $ea31
 
-modifiers  = $fc
+shflag     = $fc
 break_flag = $fd
 upper_byte = $fe
 
-MODIFIER_CAPS = 16
-MODIFIER_WIN = 8
-MODIFIER_CTRL = 4
-MODIFIER_ALT = 2
-MODIFIER_SHIFT = 1
+MODIFIER_SHIFT = 1 ; C64: Shift
+MODIFIER_ALT   = 2 ; C64: Commodore
+MODIFIER_CTRL  = 4 ; C64: Ctrl
+MODIFIER_WIN   = 8 ; C128: Alt
+MODIFIER_CAPS  = 16; C128: Caps
 
 .segment        "LOADADDR"
 .addr   *+2
@@ -54,7 +54,7 @@ activate:
 	lda #0
 	sta upper_byte
 	sta break_flag
-	sta modifiers
+	sta shflag
 
 	cli
 	rts
@@ -216,7 +216,7 @@ rcvsc5:	pha
 	rts
 
 ;****************************************
-; RECEIVE SCANCODE AFTER MODIFIERS
+; RECEIVE SCANCODE AFTER shflag
 ; * key down only
 ; * modifiers have been interpreted
 ;   and filtered
@@ -239,11 +239,11 @@ receive_down_scancode_no_modifiers:
 	plp
 	bcc key_down
 	eor #$ff
-	and modifiers
+	and shflag
 	.byte $2c
 key_down:
-	ora modifiers
-	sta modifiers
+	ora shflag
+	sta shflag
 key_up:	lda #0 ; no key to return
 	rts
 no_mod:	plp
@@ -294,14 +294,24 @@ kbd_driver:
 not_f7:
 
 	tay
+
+	cmp #14
+	bcs not_fkeys
+is_numpad:
+	ldx #3 * 2
+	bne bit_found ; use unshifted table
+not_fkeys:
+	cmp #$68
+	bcs is_numpad
+
 	ldx #0
-	lda modifiers
+	lda shflag
 find_bit:
 	lsr
 	bcs bit_found
 	inx
 	inx
-	cpx #6
+	cpx #3 * 2
 	bne find_bit
 
 bit_found:
@@ -310,11 +320,11 @@ bit_found:
 	lda tables + 1,x
 	sta 3
 	lda (2),y
-	beq drv_end
+drv2:	beq drv_end
 	jsr add_to_buf
 
 down_ext:
-	; XXX decide extended characters
+	; XXX decode extended characters
 drv_end:
 
 	rts
@@ -336,11 +346,13 @@ add_to_buf:
 	rts
 
 tables:
-	.word tab_shift, tab_alt, tab_ctrl, tab_unshifted
+	.word tab_shift-13, tab_alt-13, tab_ctrl-13, tab_unshifted
 
 tab_unshifted:
 	.byte $00,$00,$88,$87,$86,$85,$89,$00
-	.byte $00,$00,$8C,$8B,$8A,$09,'_',$00
+	.byte $00,$00,$8c,$8b,$8a
+
+	.byte                     $09,'_',$00
 	.byte $00,$00,$00,$00,$00,'Q','1',$00
 	.byte $00,$00,'Z','S','A','W','2',$00
 	.byte $00,'C','X','D','E','4','3',$00
@@ -358,8 +370,7 @@ tab_unshifted:
 	.byte $00,'+','3','-','*','9',$00,$00
 
 tab_shift:
-	.byte $00,$00,$88,$87,$86,$85,$89,$00
-	.byte $00,$00,$8C,$8B,$8A,$18,$7e,$00
+	.byte                     $18,$7e,$00
 	.byte $00,$00,$00,$00,$00,'Q'+$80,'!',$00,$00
 	.byte $00,'Z'+$80,'S'+$80,'A'+$80,'W'+$80,'@',$00
 	.byte $00,'C'+$80,'X'+$80,'D'+$80,'E'+$80,'$','#',$00
@@ -372,13 +383,8 @@ tab_shift:
 	.byte $00,$00,$8d,'}',$00,$a9,$00,$00
 	.byte $00,$00,$00,$00,$00,$00,$94,$00
 
-	.byte $00,'1',$00,'4','7',$00,$00,$00
-	.byte '0','.','2','5','6','8',$1b,$00
-	.byte $00,'+','3','-','*','9',$00,$00
-
 tab_alt:
-	.byte $00,$00,$88,$8b,$8a,$89,$00,$00
-	.byte $00,$00,$00,$00,$00,$18,$7e,$00
+	.byte                     $18,$7e,$00
 	.byte $00,$00,$00,$00,$00,$ab,$81,$00
 	.byte $00,$00,$ad,$ae,$b0,$b3,$95,$00
 	.byte $00,$bc,$bd,$ac,$b1,$97,$96,$00
@@ -391,13 +397,8 @@ tab_alt:
 	.byte $00,$00,$8d,$00,$00,$a8,$00,$00
 	.byte $00,$00,$00,$00,$00,$00,$94,$00
 
-	.byte $00,'1',$00,'4','7',$00,$00,$00
-	.byte '0','.','2','5','6','8',$1b,$00
-	.byte $00,'+','3','-','*','9',$00,$00
-
 tab_ctrl:
-	.byte $00,$00,$88,$87,$86,$85,$89,$00
-	.byte $00,$00,$8C,$8B,$8A,$18,$06,$00
+	.byte                     $18,$06,$00
 	.byte $00,$00,$00,$00,$00,$11,$90,$00
 	.byte $00,$00,$1a,$13,$01,$17,$05,$00
 	.byte $00,$03,$18,$04,$05,$9f,$1c,$00
@@ -409,10 +410,6 @@ tab_ctrl:
 	.byte $00,$00,$00,$00,$00,$1f,$00,$00
 	.byte $00,$00,$00,$00,$00,$1c,$00,$00
 	.byte $00,$00,$00,$00,$00,$00,$00,$00
-
-	.byte $00,'1',$00,'4','7',$00,$00,$00
-	.byte '0','.','2','5','6','8',$1b,$00
-	.byte $00,'+','3','-','*','9',$00,$00
 
 ; References:
 ; * Microsoft: "Keyboard Scan Code Specification", Revision 1.3a — March 16, 2000
