@@ -1,25 +1,29 @@
 ; ps2keyboard by Michael Steil
-;
-; based on "AT-Keyboard" by İlker Fıçıcılar
 
+; This code is configured for a PS/2 (or AT) keyboard connected
+; to the C64 tape port. As long as bit_data > bit_clk, the following
+; four constants can be changed without changing the code.
+;
 port_ddr = 0  ; 6510 data direction register
 port_data = 1  ; 6510 data register
+;
+               ; TAPE PIN A (VCC)   <---> PS/2 PIN 4 (VCC)  [AT PIN 4]
+               ; TAPE PIN B (GNC)   <---> PS/2 PIN 3 (GND)  [AT PIN 5]
+bit_clk  = $08 ; TAPE PIN E (write) <---> PS/2 PIN 5 (CLK)  [AT PIN 1]
+bit_data = $10 ; TAPE PIN F (sense) <---> PS/2 PIN 1 (DATA) [AT PIN 2]
 
-bit_clk  = $08 ; tape: write
-bit_data = $10 ; tape: sense
-
-kbdbyte  = $ff ; zero page
-
-shflag     = $fc
-break_flag = $fd
-upper_byte = $fe
-
+kbdbyte    = $fc ; zero page
+prefix     = $fd
+break_flag = $fe
+shflag     = $ff   ; this is compatible with C64/C128 "shflag"
 MODIFIER_SHIFT = 1 ; C64:  Shift
 MODIFIER_ALT   = 2 ; C64:  Commodore
 MODIFIER_CTRL  = 4 ; C64:  Ctrl
 MODIFIER_WIN   = 8 ; C128: Alt
 MODIFIER_CAPS  = 16; C128: Caps
 
+; skip UDTIM call at the beginning of the IRQ,
+; otherwise the STOP key doesn't work
 HACK_STOP = 1
 
 .segment        "LOADADDR"
@@ -63,7 +67,7 @@ activate:
 	sta 3
 
 	lda #0
-	sta upper_byte
+	sta prefix
 	sta break_flag
 	sta shflag
 
@@ -90,6 +94,9 @@ jmp_kernal_irq_ret:
 ;           1: no
 ;      C:   0: parity OK
 ;           1: parity error
+;****************************************
+; The byte receive function is based on
+; "AT-Keyboard" by İlker Fıçıcılar
 ;****************************************
 receive_byte:
 ; test for badline-safe time window
@@ -188,7 +195,7 @@ rcvsc2:	cmp #$e0 ; extend prefix 1
 	beq rcvsc3
 	cmp #$e1 ; extend prefix 2
 	bne rcvsc4
-rcvsc3:	sta upper_byte
+rcvsc3:	sta prefix
 	beq receive_scancode ; always
 rcvsc4:	cmp #$f0
 	bne rcvsc5
@@ -196,9 +203,9 @@ rcvsc4:	cmp #$f0
 	bne receive_scancode ; always
 rcvsc5:	pha
 	lsr break_flag ; break bit into C
-	ldx upper_byte
+	ldx prefix
 	lda #0
-	sta upper_byte
+	sta prefix
 	sta break_flag
 	pla ; lower byte into A
 	rts
