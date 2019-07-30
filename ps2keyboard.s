@@ -12,7 +12,7 @@ kbdbyte  = $ff ; zero page
 
 kernal_irq_ret = $ea31
 
-modifiers  = $0400+25*40-1;$fc
+modifiers  = $fc
 break_flag = $fd
 upper_byte = $fe
 
@@ -94,6 +94,9 @@ hextab:	.byte "0123456789",1,2,3,4,5,6
 ;****************************************
 ; RECEIVE BYTE
 ; out: A: byte (0 = none)
+;      Z: byte available
+;           0: yes
+;           1: no
 ;      C:   0: parity OK
 ;           1: parity error
 ;****************************************
@@ -183,6 +186,9 @@ lc08c:	clc
 ;      A: scancode low (0 = none)
 ;      C:   0: key down
 ;           1: key up
+;      Z: scancode available
+;           0: yes
+;           1: no
 ;****************************************
 receive_scancode:
 	jsr receive_byte
@@ -209,39 +215,95 @@ rcvsc5:	pha
 	pla ; lower byte into A
 	rts
 
+
 ;****************************************
 ;****************************************
 kbd_driver:
+	jsr receive_down_scancode_no_modifiers
+	beq drv_end
+
+	cpx #0
+	bne down_ext
+
+	tay
+	lda modifiers
+	beq use_tab_unshifted
+	lda #MODIFIER_SHIFT
+	bit modifiers
+	bne use_tab_shift
+	lda #MODIFIER_CTRL
+	bit modifiers
+	bne use_tab_ctrl
+	lda #MODIFIER_ALT
+	bit modifiers
+	bne use_tab_alt
+
+use_tab_unshifted:
+	tya
+	tax
+	lda tab_unshifted,x
+	jmp drvcont
+
+use_tab_shift:
+	tya
+	tax
+	lda tab_shift,x
+	jmp drvcont
+
+use_tab_ctrl:
+	tya
+	tax
+	lda tab_ctrl,x
+	jmp drvcont
+
+use_tab_alt:
+	tya
+	tax
+	lda tab_alt,x
+	jmp drvcont
+
+drvcont:
+	jsr add_to_buf
+
+down_ext:
+drv_end:
+
+	rts
+
+;****************************************
+; RECEIVE SCANCODE AFTER MODIFIERS
+; * key down only
+; * modifiers have been interpreted
+;   and filtered
+; out: X: scancode high
+;           0: no prefix
+;           1: E0 prefix
+;           2: E1 prefix
+;      A: scancode low (0 = none)
+;      Z: scancode available
+;           0: yes
+;           1: no
+;****************************************
+receive_down_scancode_no_modifiers:
 	jsr receive_scancode
 	beq no_key
-	bcs key_up
-;
-; key down
-;
+
+	php
 	jsr check_mod
-	bcc not_mod_down
-	ora modifiers
-	bne stmod ; always
-
-not_mod_down:
-	; XXX look up key in table, add to queue
-
-	jsr hex8
-	lda #' '
-	jsr putchar
-
-	jmp no_key
-
-;
-; key up
-;
-key_up:
-	jsr check_mod
-	bcc no_key ; ignore otherwise
+	bcc no_mod
+	plp
+	bcc key_down
 	eor #$ff
 	and modifiers
-stmod:	sta modifiers
-no_key:	rts
+	.byte $2c
+key_down:
+	ora modifiers
+	sta modifiers
+key_up:	lda #0 ; no key to return
+	rts
+no_mod:	plp
+	bcs key_up
+no_key:	rts ; original Z is retained
 
 
 check_mod:
@@ -271,6 +333,102 @@ md_sh:	lda #MODIFIER_SHIFT
 	sec
 	rts
 
+;****************************************
+; ADD CHAR TO KBD BUFFER
+;****************************************
+add_to_buf:
+	pha
+	lda $c6 ; length of keyboard buffer
+	cmp #10
+	bcs :+ ; full, ignore
+	inc $c6
+	tax
+	pla
+	sta $0277,x ; store
+	rts
+:	pla
+	rts
+
+PETSCII_F1 = $85
+PETSCII_F2 = $89
+PETSCII_F3 = $86
+PETSCII_F4 = $8A
+PETSCII_F5 = $87
+PETSCII_F6 = $8B
+PETSCII_F7 = $88
+PETSCII_F8 = $8C
+
+tab_unshifted:
+	.byte $00,$00,$00,PETSCII_F5,PETSCII_F3,PETSCII_F1,PETSCII_F2,$00
+	.byte $00,$00,PETSCII_F8,PETSCII_F6,PETSCII_F4,$00,$7e,$00
+	.byte $00,$00,$00,$00,$00,'Q','1',$00
+	.byte $00,$00,'Z','S','A','W','2',$00
+	.byte $00,'C','X','D','E','4','3',$00
+	.byte $00,' ','V','F','T','R','5',$00
+	.byte $00,'N','B','H','G','Y','6',$00
+	.byte $00,$00,'M','J','U','7','8',$00
+	.byte $00,',','K','I','O','0','9',$00
+	.byte $00,'.','/','L',';','P','-',$00
+	.byte $00,$00,$2a,$00,'[','=',$00,$00
+	.byte $00,$00,$0d,']',$00,'\',$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$14,$00
+	.byte $00,'1',$00,'4','7',$00,$00,$00
+	.byte '0','.','2','5','6','8',$1b,$00
+	.byte $00,'+','3','-','*','9',$00,$00
+
+tab_shift:
+	.byte $00,$00,$00,PETSCII_F7,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$1b,$00
+	.byte $00,$00,$00,$00,$00,$71,$21,$00
+	.byte $00,$00,$7a,$73,$61,$77,$22,$00
+	.byte $00,$63,$78,$64,$65,$24,$23,$00
+	.byte $00,$20,$76,$66,$74,$72,$25,$00
+	.byte $00,$6e,$62,$68,$67,$79,$26,$00
+	.byte $00,$00,$6d,$6a,$75,$27,$28,$00
+	.byte $00,$3c,$6b,$69,$6f,$30,$29,$00
+	.byte $00,$3e,$3f,$6c,$3a,$70,$2d,$00
+	.byte $00,$00,$5f,$00,$7b,$2b,$00,$00
+	.byte $00,$00,$0d,$7d,$00,$7c,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$14,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$14,$00,$00,$00,$00,$00,$00
+	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
+
+tab_ctrl:
+	.byte $00,$00,$00,$00,$00,$00,$00,$ff
+	.byte $00,$00,$00,$00,$00,$00,$7e,$00
+	.byte $00,$00,$00,$00,$00,$11,$90,$00
+	.byte $00,$00,$1a,$13,$01,$17,$05,$00
+	.byte $00,$03,$18,$04,$05,$9f,$1c,$00
+	.byte $00,$20,$16,$06,$14,$12,$9c,$00
+	.byte $00,$0e,$02,$08,$07,$19,$1e,$00
+	.byte $00,$00,$0d,$0a,$15,$1f,$9e,$00
+	.byte $00,$2c,$0b,$09,$0f,$92,$12,$00
+	.byte $00,$2e,$2f,$0c,$3b,$10,$2d,$00
+	.byte $00,$00,$27,$00,$5b,$3d,$00,$00
+	.byte $00,$00,$0d,$5d,$00,$5c,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$14,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
+
+tab_alt:
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$7e,$00
+	.byte $00,$00,$00,$00,$00,$ab,$81,$00
+	.byte $00,$00,$ad,$ae,$b0,$b3,$95,$00
+	.byte $00,$bc,$bd,$ac,$b1,$97,$96,$00
+	.byte $00,$20,$be,$bb,$a3,$b2,$98,$00
+	.byte $00,$b6,$bf,$b4,$a5,$b7,$99,$00
+	.byte $00,$00,$a7,$b5,$b8,$9a,$9b,$00
+	.byte $00,$3c,$a1,$a2,$b9,$30,$29,$00
+	.byte $00,$3e,$3f,$b6,$5d,$af,$7c,$00
+	.byte $00,$00,$27,$00,$40,$3d,$00,$00
+	.byte $00,$00,$0d,$5e,$00,$a8,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$14,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$00,$00,$00,$00,$00,$00,$00
+	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
 
 ; References:
 ; * Microsoft: "Keyboard Scan Code Specification", Revision 1.3a — March 16, 2000
