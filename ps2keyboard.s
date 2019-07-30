@@ -12,41 +12,100 @@ kbdbyte  = $ff ; zero page
 
 kernal_irq_ret = $ea31
 
-MODIFIER_CAPS = 8
-MODIFIER_ALT = 4
-MODIFIER_CTRL = 2
-MODIFIER_SHIFT = 1
-
-EXTENDED_PREFIX       = $e0
-PAUSE_PREFIX          = $e1
-BREAK_PREFIX          = $f0
-EXTENDED_BREAK_PREFIX = $f1
-; The break prefix for extended codes sent by the keuboard is $e0 $f0.
-; This code stores $f1 into the last_prefix byte.
-
-PETSCII_F1 = $85
-PETSCII_F2 = $89
-PETSCII_F3 = $86
-PETSCII_F4 = $8A
-PETSCII_F5 = $87
-PETSCII_F6 = $8B
-PETSCII_F7 = $88
-PETSCII_F8 = $8C
+break_flag = $fd
+upper_byte = $fe
 
 .segment        "LOADADDR"
 .addr   *+2
 .segment "CODE"
 
-; SYS 49152
-	jmp activate
-; SYS 49155
-	jmp deactivate
+;****************************************
+; ACTIVATE
+;****************************************
+activate:
+	sei
+	lda #<irq_handler
+	sta $0314
+	lda #>irq_handler
+	sta $0315
+.if 1
+	lda #1 ; set up raster IRQ
+	sta $d01a
+	sta $dc0d
+	lda #$fa
+	sta $d012
+	lda $d011
+	and #$7f
+	sta $d011
+.endif
+
+	lda #0
+	sta 2
+	lda #4
+	sta 3
+
+	lda #0
+	sta upper_byte
+	sta break_flag
+
+	cli
+	rts
+
+;****************************************
+; IRQ HANDLER
+;****************************************
+irq_handler:
+	jsr receive_scancode
+	beq no_key
+
+	pha ; lower byte
+	txa
+	pha ; upper byte
+	bcs ll1 ; key-up
+	lda #'+'
+	.byte $2c
+ll1:	lda #'-'
+	jsr putchar
+	pla ; upper byte
+	jsr hex8
+	pla ; lower byte
+	jsr hex8
+	lda #' '
+	jsr putchar
+
+no_key:
+	inc $d019 ; ack IRQ
+	jmp kernal_irq_ret
+
+hex8:
+	pha
+	lsr
+	lsr
+	lsr
+	lsr
+	jsr hex4
+	pla
+	and #15
+hex4:	tax
+	lda hextab,x
+putchar:
+	ldy #0
+	sta (2),y
+	inc 2
+	bne :+
+	inc 3
+:	rts
+hextab:	.byte "0123456789",1,2,3,4,5,6
+
+
+
 
 ;****************************************
 ; RECEIVE BYTE
 ;****************************************
 receive_byte:
 ; test for badline-safe time window
+.if 1
 	ldy $d012
 	cpy #243
 	bcs :+
@@ -55,15 +114,22 @@ receive_byte:
 	lda #0 ; in badline area, fail
 	sec
 	rts
+.endif
 ; set input, bus idle
 :	lda port_ddr ; set CLK and DATA as input
 	and #$ff-bit_clk-bit_data
 	sta port_ddr ; -> bus is idle, keyboard can start sending
 
 	lda #bit_clk+bit_data
+.if 0
 	ldy #32
 :	cpy $d012
 	beq lc08c ; end of badline-free area
+.else
+	ldx #10
+:	dex
+	beq lc08c
+.endif
 	bit port_data
 	bne :- ; wait for CLK=0 and DATA=0 (start bit)
 
@@ -74,8 +140,8 @@ lc044:	bit port_data ; wait for CLK=1 (not ready)
 lc04a:	bit port_data
 	bne lc04a ; wait for CLK=0 (ready)
 	lda port_data
-	and #$10
-	cmp #$10
+	and #bit_data
+	cmp #bit_data
 	ror kbdbyte ; save bit
 	lda #bit_clk
 lc058:	bit port_data
@@ -103,7 +169,7 @@ lc07c:	lsr a ; calculate parity
 lc080:	cmp #0
 	bne lc07c
 	tya
-	plp ; transmittedparity
+	plp ; transmitted parity
 	adc #1
 	lsr a ; C=0: parity OK
 	lda kbdbyte
@@ -115,496 +181,43 @@ lc08c:	clc
 	beq lc069
 
 ;****************************************
-; REGULAR KEY DOWN
+; RECEIVE SCANCODE:
+; out: X: scancode high
+;           0: no prefix
+;           1: E0 prefix
+;           2: E1 prefix
+;      A: scancode low (0 = none)
+;      C:   0: key down
+;           1: key up
 ;****************************************
-; * simple code:   decode into PETSCII and return in .A
-; * modifier code: update modifier bitfield, return 0
-; * prefix code:   store for later processing, return 0
-decode_regular_key_down:
-	cmp #EXTENDED_PREFIX
-	beq store_prefix
-	cmp #BREAK_PREFIX
-	beq store_prefix
-	cmp #PAUSE_PREFIX
-	beq store_prefix
-	cmp #$12 ; left shift
-	beq shift_down
-	cmp #$59 ; right shift
-	beq shift_down
-	cmp #$14 ; left ctrl
-	beq ctrl_down
-	cmp #$83 ; f7
-	beq key_f7
-	cmp #$11 ; left alt
-	bne is_regular_character
-; alt down
-	lda #MODIFIER_ALT
-	.byte $2c
-ctrl_down:
-	lda #MODIFIER_CTRL
-	.byte $2c
-shift_down:
-	lda #MODIFIER_SHIFT
-	ora modifier
-	and #$0f
-	sta modifier
-	lda #0
-	.byte $2c
-key_f7:
-	lda #PETSCII_F7
-	pha
-	lda #0
-	sta last_code
-	sta last_prefix
-	pla
-	clc ; OK
-	rts
-
-store_prefix:
-	sta last_prefix
-lc0d7:	lda #0
-	sta last_code
-	clc ; OK
-	rts
-
-;
-; look up a regular character from one of the four tables
-;
-is_regular_character:
-	cmp #$80
-	bcs lc0d7 ; ignore unknown code
-	tay
-	lda #0
-	sta last_code
-	sta last_prefix
-	lda modifier
-	bne lc0f5
-lc0f0:	lda tab_unshifted,y
-	clc ; OK
-	rts
-lc0f5:	cmp #MODIFIER_CAPS + MODIFIER_SHIFT
-	beq lc0f0 ; shift cancels caps
-	cmp #MODIFIER_CTRL
-	bne lc102 ; not ctrl
-	lda tab_ctrl,y
-	clc ; OK
-	rts
-lc102:	cmp #MODIFIER_ALT ; alt
-	bne lc10b
-	lda tab_alt,y
-	clc ; OK
-	rts
-lc10b:	and #MODIFIER_CAPS + MODIFIER_SHIFT
-	beq lc0d7 ; ignore
-	lda tab_shift,y
-	clc ; OK
-	rts
-
-;****************************************
-; REGULAR KEY UP
-;****************************************
-; key up handler
-; * simple code:   ignore, return 0
-; * pause:         ignore, return 0
-; * modifier code: update modifier bitfield, return 0
-decode_regular_key_up:
-	cmp #PAUSE_PREFIX
-	beq handle_pause_up
-	cmp #$58 ; caps lock
-	beq toggle_caps
-	cmp #$7e ; scroll lock
-	beq scroll_lock
-	cmp #$12 ; left shift
-	beq handle_shift_up
-	cmp #$59 ; right shift
-	beq handle_shift_up
-	cmp #$14 ; right ctrl
-	beq handle_ctrl_up
-	cmp #$11 ; left alt
-	bne lc13e ; unknown -> ignore
-; left alt
-	lda #$0f - MODIFIER_ALT
-	.byte $2c
-handle_ctrl_up:
-	lda #$0f - MODIFIER_CTRL
-	.byte $2c
-handle_shift_up:
-	lda #$0f - MODIFIER_SHIFT
-	and modifier
-	sta modifier
-lc13e:	lda #0
-	clc
-	rts
-
-; skip 7 bytes
-handle_pause_up:
-	txa
-	pha
-	ldx #7
-lc14c:	jsr receive_byte
-	beq lc14c
-	dex
-	bne lc14c ; skip 7 non-empty bytes
-	pla
-	tax
-	lda #0
-	clc
-	rts
-
-toggle_caps:
-	lda modifier
-	eor #8
-	sta modifier
-	lda #0
-	clc ; OK
-	rts
-
-scroll_lock:
-	lda scroll_lock_state
-	eor #$80
-	sta scroll_lock_state
-	lda #$13 ; XOFF (PETSCII: HOME)
-	ldy scroll_lock_state
-	bmi :+
-	lda #$11 ; XON (PETSCII: CSR DOWN)
-:	clc
-	rts
-
-;****************************************
-; EXTENDED KEY DOWN
-;****************************************
-decode_extended_key_down:
-	cmp #$7e ; ctrl+pause
-	beq ctrl_pause
-	cmp #BREAK_PREFIX
-	beq handle_break
-; The extended codes are $11/$12/$14/$4A/$5A and $69-$7D,
-; so we check for the first set one by one, and then we use
-; a table for the second set.
-	cmp #$4a; keypad '/'
-	beq key_slash
-	cmp #$5a ; keypad enter
-	beq key_enter
-	cmp #$12
-	beq handle_printscreen
-	cmp #$14 ; right ctrl
-	beq handle_rctrl
-	cmp #$11 ; right alt
-	bne lc1da
-; right alt
-	lda #MODIFIER_ALT
-	.byte $2c
-handle_rctrl:
-	lda #MODIFIER_CTRL
-	ora modifier
-	sta modifier
-lc1a5:	lda #0
-	.byte $2c
-key_enter:
-	lda #$0d ; RETURN
-	.byte $2c
-key_slash:
-	lda #$2f ; '/'
-	clc ; OK
-	rts
-
-ctrl_pause: ; skip 6 non-empty bytes
-	txa
-	pha
-	ldx #6
-lc1b3:	jsr receive_byte
-	beq lc1b3
-	dex
-	bne lc1b3
-	pla
-	tax
-	lda #$ff
-	rts
-
-handle_break:
-	lda #EXTENDED_BREAK_PREFIX
-	sta last_prefix
-	lda #0
-	sta last_code
-	clc
-	rts
-
-handle_printscreen: ; skip two bytes
+receive_scancode:
 	jsr receive_byte
-	beq handle_printscreen
-lc1d1:	jsr receive_byte
-	beq lc1d1
+	bcs rcvsc1 ; parity error
+	bne rcvsc2 ; non-zero code
+rcvsc1:	lda #0
+	rts
+rcvsc2:	cmp #$e0 ; extend prefix 1
+	beq rcvsc3
+	cmp #$e1 ; extend prefix 2
+	bne rcvsc4
+rcvsc3:	sta upper_byte
+	beq receive_scancode
+rcvsc4:	cmp #$f0
+	bne rcvsc5
+	rol break_flag ; set to 1
+	bne receive_scancode ; always
+rcvsc5:	pha
+	lsr break_flag ; break bit into C
+	ldx upper_byte
 	lda #0
-	clc ; OK
+	sta upper_byte
+	sta break_flag
+	pla ; lower byte into A
 	rts
 
-lc1da:	cmp #$68 ; check for keypad keys
-	bcc lc1a5
-	cmp #$80
-	bcs lc1a5
-	tay
-	lda tab_keypad-$68,y
-	clc
-	rts
 
-;****************************************
-; EXTENDED KEY UP
-;****************************************
-decode_extended_key_up:
-	cmp #$14
-	beq handle_rctrl_up
-	cmp #$11
-	beq handle_ralt_up
-	cmp #$12 ; print screen
-	bne lc20d
-lc1f4:	jsr receive_byte ; skip 2 bytes
-	beq lc1f4
-lc1f9:	jsr receive_byte
-	beq lc1f9
-	lda #0
-	clc
-	rts
-
-handle_rctrl_up:
-	lda #$0f - MODIFIER_CTRL
-	.byte $2c
-handle_ralt_up:
-	lda #$0f - MODIFIER_ALT
-	and modifier
-	sta modifier
-lc20d:	lda #0
-	clc ; OK
-	rts
-
-;****************************************
-; ADD CHAR TO KBD BUFFER
-;****************************************
-add_to_buf:
-	pha
-	lda $c6 ; length of keyboard buffer
-	cmp #10
-	bcs lc220 ; full, ignore
-	inc $c6
-	tax
-	pla
-	sta $0277,x ; store
-	rts
-
-lc220:	pla
-	rts
-
-;****************************************
-; IRQ CODE
-;****************************************
-irq_code:
-	lda last_code ; we have a code
-	bne handle_code
-; receive code for decoding next time
-	jsr receive_byte
-	sta last_code
-	rts
-handle_code:
-	lda last_prefix
-	bne handle_prefix ; we have a prefix and a code
-;****************************************
-; IRQ CODE: REGULAR KEY DOWN
-;****************************************
-; decode simple code and store it in queue
-	lda last_code
-	jsr decode_regular_key_down
-	beq :+ ; no PETSCII code -> return
-	jsr add_to_buf
-:	rts
-; there as a prefix, and a code
-handle_prefix:
-	cmp #BREAK_PREFIX
-	bne not_break
-;****************************************
-; IRQ CODE: REGULAR KEY UP
-;****************************************
-	lda #0
-	sta last_prefix
-	lda last_code
-	jsr decode_regular_key_up
-lc253:	lda #0
-	sta last_code
-	rts
-
-lc259:	lda #0
-	sta last_prefix
-	sta last_code
-	rts
-
-not_break:
-	cmp #EXTENDED_PREFIX
-	bne not_extended
-;****************************************
-; IRQ CODE: EXTENDED KEY DOWN
-;****************************************
-	lda #0
-	sta last_prefix
-	lda last_code
-	jsr decode_extended_key_down
-	beq lc253
-	jsr add_to_buf
-	lda #0
-	sta last_code
-	rts
-
-not_extended:
-	cmp #EXTENDED_BREAK_PREFIX
-	bne lc259
-;****************************************
-; IRQ CODE: EXTENDED KEY UP
-;****************************************
-	lda #0
-	sta last_prefix
-	lda last_code
-	jsr decode_extended_key_up
-	beq lc259
-
-;****************************************
-; ACTIVATE
-;****************************************
-activate:
-	sei
-	lda #<irq_handler
-	sta $0314
-	lda #>irq_handler
-	sta $0315
-	lda #1 ; set up raster IRQ
-	sta $d01a
-	sta $dc0d
-	lda #$fa
-	sta $d012
-	lda $d011
-	and #$7f
-	sta $d011
-	cli
-	rts
-
-;****************************************
-; IRQ HANDLER
-;****************************************
-irq_handler:
-	jsr irq_code
-	inc $d019 ; ack IRQ
-	jmp kernal_irq_ret
-
-;****************************************
-; DEACTIVATE
-;****************************************
-deactivate:
-	sei
-	lda #<kernal_irq_ret
-	sta $0314
-	lda #>kernal_irq_ret
-	sta $0315
-	lda #0 ; restore timer IRQ
-	sta $d01a
-	lda #0
-	sta $dc0d
-	sta $dc0e
-	sta $dc0f
-	lda #$1a
-	sta $dc04
-	lda #$41
-	sta $dc05
-	lda #1
-	sta $dc0e
-	lda #$81
-	sta $dc0d
-	cli
-	rts
-
-last_prefix:
-	.byte $00
-
-last_code:
-	.byte $00
-
-scroll_lock_state:
-	.byte $80
-
-modifier:
-	.byte $00
-
-tab_unshifted:
-	.byte $00,$00,$00,PETSCII_F5,PETSCII_F3,PETSCII_F1,PETSCII_F2,$00
-	.byte $00,$00,PETSCII_F8,PETSCII_F6,PETSCII_F4,$00,$7e,$00
-	.byte $00,$00,$00,$00,$00,'Q','1',$00
-	.byte $00,$00,'Z','S','A','W','2',$00
-	.byte $00,'C','X','D','E','4','3',$00
-	.byte $00,' ','V','F','T','R','5',$00
-	.byte $00,'N','B','H','G','Y','6',$00
-	.byte $00,$00,'M','J','U','7','8',$00
-	.byte $00,',','K','I','O','0','9',$00
-	.byte $00,'.','/','L',';','P','-',$00
-	.byte $00,$00,$2a,$00,'[','=',$00,$00
-	.byte $00,$00,$0d,']',$00,'\',$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$14,$00
-	.byte $00,'1',$00,'4','7',$00,$00,$00
-	.byte '0','.','2','5','6','8',$1b,$00
-	.byte $00,'+','3','-','*','9',$00,$00
-
-tab_shift:
-	.byte $00,$00,$00,PETSCII_F7,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$1b,$00
-	.byte $00,$00,$00,$00,$00,$71,$21,$00
-	.byte $00,$00,$7a,$73,$61,$77,$22,$00
-	.byte $00,$63,$78,$64,$65,$24,$23,$00
-	.byte $00,$20,$76,$66,$74,$72,$25,$00
-	.byte $00,$6e,$62,$68,$67,$79,$26,$00
-	.byte $00,$00,$6d,$6a,$75,$27,$28,$00
-	.byte $00,$3c,$6b,$69,$6f,$30,$29,$00
-	.byte $00,$3e,$3f,$6c,$3a,$70,$2d,$00
-	.byte $00,$00,$5f,$00,$7b,$2b,$00,$00
-	.byte $00,$00,$0d,$7d,$00,$7c,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$14,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$14,$00,$00,$00,$00,$00,$00
-	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
-
-tab_ctrl:
-	.byte $00,$00,$00,$00,$00,$00,$00,$ff
-	.byte $00,$00,$00,$00,$00,$00,$7e,$00
-	.byte $00,$00,$00,$00,$00,$11,$90,$00
-	.byte $00,$00,$1a,$13,$01,$17,$05,$00
-	.byte $00,$03,$18,$04,$05,$9f,$1c,$00
-	.byte $00,$20,$16,$06,$14,$12,$9c,$00
-	.byte $00,$0e,$02,$08,$07,$19,$1e,$00
-	.byte $00,$00,$0d,$0a,$15,$1f,$9e,$00
-	.byte $00,$2c,$0b,$09,$0f,$92,$12,$00
-	.byte $00,$2e,$2f,$0c,$3b,$10,$2d,$00
-	.byte $00,$00,$27,$00,$5b,$3d,$00,$00
-	.byte $00,$00,$0d,$5d,$00,$5c,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$14,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
-
-tab_alt:
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$7e,$00
-	.byte $00,$00,$00,$00,$00,$ab,$81,$00
-	.byte $00,$00,$ad,$ae,$b0,$b3,$95,$00
-	.byte $00,$bc,$bd,$ac,$b1,$97,$96,$00
-	.byte $00,$20,$be,$bb,$a3,$b2,$98,$00
-	.byte $00,$b6,$bf,$b4,$a5,$b7,$99,$00
-	.byte $00,$00,$a7,$b5,$b8,$9a,$9b,$00
-	.byte $00,$3c,$a1,$a2,$b9,$30,$29,$00
-	.byte $00,$3e,$3f,$b6,$5d,$af,$7c,$00
-	.byte $00,$00,$27,$00,$40,$3d,$00,$00
-	.byte $00,$00,$0d,$5e,$00,$a8,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$14,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$00,$00,$00,$00,$00,$00,$00
-	.byte $00,$2b,$00,$2d,$00,$00,$00,$00
-
-tab_keypad:
-	.byte $00,$00,$00,$9d,$13,$00,$00,$00 ; @$68
-	.byte $94,$14,$11,$00,$1d,$91,$00,$00 ; @$70
-	.byte $00,$00,$0a,$00,$00,$93,$00,$00 ; @$78
+; References:
+; * Microsoft: "Keyboard Scan Code Specification", Revision 1.3a — March 16, 2000
 
 ; Make Code     Break Code          Key
 ;---------------------------------------------
@@ -694,7 +307,6 @@ tab_keypad:
 ; 7E            F0 7E               Scroll Lock
 ; 83            F0 83               F7
 ; E0 11         E0 F0 11            Right Alt
-; E0 12 E0 7C   E0 F0 7C E0 F0 12   Print Screen
 ; E0 14         E0 F0 14            Right Ctrl
 ; E0 4A         E0 F0 4A            Keypad /
 ; E0 5A         E0 F0 5A            Keypad Enter
@@ -708,5 +320,18 @@ tab_keypad:
 ; E0 75         E0 F0 75            Up Arrow
 ; E0 7A         E0 F0 7A            Page Down
 ; E0 7D         E0 F0 7D            Page Up
-; E1 14 77 E1   F0 14 F0 77         Pause Break
-; E0 7E E0 F0 7E                    Ctrl + Pause
+;
+; *** weird ones ***
+;
+; 84            F0 84               Left/Right Alt + Print Screen
+; E0 12 E0 7C   E0 F0 7C E0 F0 12   Print Screen
+;                                   like two keys "Alt-Shift" (E0-12) and SysRq
+;                                   repeat: E0 7C
+; E0 7C         E0 F0 7C            SysRq [Ctrl + Print Screen]
+;                                   repeat: E0 7C
+; E1 14 77 E1 F0 14 F0 77           Pause (E1-14 down, Num Lock down, E1-14 up, Num Lock up)
+;                                   no break code, no repeat
+; E0 7E E0 F0 7E                    Ctrl + Pause (like a separate key)
+;                                   no break, no repeat
+;
+; E0 12         E0 F0 12            non-existent key, added to some combinations for compat.
