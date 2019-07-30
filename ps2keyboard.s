@@ -12,8 +12,15 @@ kbdbyte  = $ff ; zero page
 
 kernal_irq_ret = $ea31
 
+modifiers  = $0400+25*40-1;$fc
 break_flag = $fd
 upper_byte = $fe
+
+MODIFIER_CAPS = 16
+MODIFIER_WIN = 8
+MODIFIER_ALT = 4
+MODIFIER_CTRL = 2
+MODIFIER_SHIFT = 1
 
 .segment        "LOADADDR"
 .addr   *+2
@@ -47,6 +54,7 @@ activate:
 	lda #0
 	sta upper_byte
 	sta break_flag
+	sta modifiers
 
 	cli
 	rts
@@ -55,25 +63,8 @@ activate:
 ; IRQ HANDLER
 ;****************************************
 irq_handler:
-	jsr receive_scancode
-	beq no_key
+	jsr kbd_driver
 
-	pha ; lower byte
-	txa
-	pha ; upper byte
-	bcs ll1 ; key-up
-	lda #'+'
-	.byte $2c
-ll1:	lda #'-'
-	jsr putchar
-	pla ; upper byte
-	jsr hex8
-	pla ; lower byte
-	jsr hex8
-	lda #' '
-	jsr putchar
-
-no_key:
 	inc $d019 ; ack IRQ
 	jmp kernal_irq_ret
 
@@ -102,6 +93,9 @@ hextab:	.byte "0123456789",1,2,3,4,5,6
 
 ;****************************************
 ; RECEIVE BYTE
+; out: A: byte (0 = none)
+;      C:   0: parity OK
+;           1: parity error
 ;****************************************
 receive_byte:
 ; test for badline-safe time window
@@ -215,6 +209,68 @@ rcvsc5:	pha
 	pla ; lower byte into A
 	rts
 
+;****************************************
+;****************************************
+kbd_driver:
+	jsr receive_scancode
+	beq no_key
+	bcs key_up
+;
+; key down
+;
+	jsr check_mod
+	bcc not_mod_down
+	ora modifiers
+	bne stmod ; always
+
+not_mod_down:
+	; XXX look up key in table, add to queue
+
+	jsr hex8
+	lda #' '
+	jsr putchar
+
+	jmp no_key
+
+;
+; key up
+;
+key_up:
+	jsr check_mod
+	bcc no_key ; ignore otherwise
+	eor #$ff
+	and modifiers
+stmod:	sta modifiers
+no_key:	rts
+
+
+check_mod:
+	cmp #$11 ; left alt (0011) or right alt (E011)
+	beq md_alt
+	cmp #$14 ; left ctrl (0014) or right ctrl (E014)
+	beq md_ctl
+	cpx #0
+	bne ckmod2
+	cmp #$12 ; left shift (0012)
+	beq md_sh
+	cmp #$59 ; right shift (0059)
+	beq md_sh
+ckmod1:	clc
+	rts
+ckmod2:	cmp #$1F ; left win (001F)
+	beq md_win
+	cmp #$27 ; right win (0027)
+	bne ckmod1
+md_win:	lda #MODIFIER_WIN
+	.byte $2c
+md_alt:	lda #MODIFIER_ALT
+	.byte $2c
+md_ctl:	lda #MODIFIER_CTRL
+	.byte $2c
+md_sh:	lda #MODIFIER_SHIFT
+	sec
+	rts
+
 
 ; References:
 ; * Microsoft: "Keyboard Scan Code Specification", Revision 1.3a — March 16, 2000
@@ -308,6 +364,8 @@ rcvsc5:	pha
 ; 83            F0 83               F7
 ; E0 11         E0 F0 11            Right Alt
 ; E0 14         E0 F0 14            Right Ctrl
+; E0 1F         E0 F0 1F            Left Win/Super
+; E0 27         E0 F0 27            Right Win/Super
 ; E0 4A         E0 F0 4A            Keypad /
 ; E0 5A         E0 F0 5A            Keypad Enter
 ; E0 69         E0 F0 69            End
