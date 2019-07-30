@@ -109,13 +109,13 @@ receive_byte:
 	sta port_ddr ; -> bus is idle, keyboard can start sending
 
 	lda #bit_clk+bit_data
-.if 0
+.if 1
 	ldy #32
 :	cpy $d012
 	beq lc08c ; end of badline-free area
 .else
-	ldx #10
-:	dex
+	ldy #10
+:	dey
 	beq lc08c
 .endif
 	bit port_data
@@ -273,24 +273,23 @@ kbd_driver:
 
 	tay
 
-
 	cpx #0
 	bne down_ext
-
-	cmp #$83
+; *** regular scancodes
+	cmp #$83 ; convert weird f7 scancode
 	bne not_f7
-	lda #$02
+	lda #$02 ; this one is unused
 not_f7:
 
-	cmp #14
-	bcs not_fkeys
-is_numpad:
+	cmp #$0e ; scancodes < $0E and > $68 are independent of modifiers
+	bcc is_unshifted
+	cmp #$68
+	bcc not_numpad
+is_unshifted:
 	ldx #3 * 2
 	bne bit_found ; use unshifted table
-not_fkeys:
-	cmp #$68
-	bcs is_numpad
 
+not_numpad:
 	ldx #0
 	lda shflag
 find_bit:
@@ -308,44 +307,42 @@ bit_found:
 	sta 3
 	lda (2),y
 drv2:	beq drv_end
-drv3:	jmp add_to_buf
+	jmp add_to_buf
 
 down_ext:
-	cpx #$e1
-	bne down_ext1
-
-	lda shflag
-	lsr ; shift -> C
-	lda #3 * 2
-drv4:	ror
-	bne drv3 ; always
-
-down_ext1:
-	cmp #$4a
-	beq is_4a
-	cmp #$5a
-	bne not_5a
-	lda #13
-	bne drv3
-is_4a:	lda #'/'
-	bne drv3
+	cpx #$e1 ; prefix $E1 -> E1-14 = Pause/Break
+	beq is_stop
+	cmp #$4a ; Numpad /
+	bne not_4a
+	lda #'/'
+	bne add_to_buf
+not_4a:	cmp #$5a ; Numpad Enter
+	beq is_enter
+	cpy #$6c ; special case shift+home = clr
+	beq is_home
 not_5a: cmp #$68
 	bcc drv_end
 	cmp #$80
 	bcs drv_end
-; special case shift+home = clr
-	cpy #$6c
-	bne nhome
-	lda shflag
-	lsr ; shift -> C
-	lda #$13 * 2; HOME
-	bne drv4 ; always
 nhome:	lda tab_extended-$68,y
-	bne drv3
-
+	bne add_to_buf
 drv_end:
 	rts
 
+; or $80 if shift is down
+is_home:
+	ldx #$13 * 2; home (-> clr)
+	.byte $2c
+is_enter:
+	ldx #$0d * 2 ; return (-> shift+return)
+	.byte $2c
+is_stop:
+	ldx #$03 * 2 ; stop (-> run)
+	lda shflag
+	lsr ; shift -> C
+	txa
+	ror
+; passes into add_to_buf
 
 ;****************************************
 ; ADD CHAR TO KBD BUFFER
@@ -514,31 +511,31 @@ tab_extended:
 ; 5B            F0 5B               ]
 ; 5D            F0 5D               \
 ; 66            F0 66               Backspace
-; 69            F0 69               Keypad 1
-; 6B            F0 6B               Keypad 4
-; 6C            F0 6C               Keypad 7
-; 70            F0 70               Keypad 0
-; 71            F0 71               Keypad .
-; 72            F0 72               Keypad 2
-; 73            F0 73               Keypad 5
-; 74            F0 74               Keypad 6
-; 75            F0 75               Keypad 8
+; 69            F0 69               Numpad 1
+; 6B            F0 6B               Numpad 4
+; 6C            F0 6C               Numpad 7
+; 70            F0 70               Numpad 0
+; 71            F0 71               Numpad .
+; 72            F0 72               Numpad 2
+; 73            F0 73               Numpad 5
+; 74            F0 74               Numpad 6
+; 75            F0 75               Numpad 8
 ; 76            F0 76               Esc
 ; 77            F0 77               Num Lock
 ; 78            F0 78               F11
-; 79            F0 79               Keypad +
-; 7A            F0 7A               Keypad 3
-; 7B            F0 7B               Keypad -
-; 7C            F0 7C               Keypad *
-; 7D            F0 7D               Keypad 9
+; 79            F0 79               Numpad +
+; 7A            F0 7A               Numpad 3
+; 7B            F0 7B               Numpad -
+; 7C            F0 7C               Numpad *
+; 7D            F0 7D               Numpad 9
 ; 7E            F0 7E               Scroll Lock
 ; 83            F0 83               F7
 ; E0 11         E0 F0 11            Right Alt
 ; E0 14         E0 F0 14            Right Ctrl
 ; E0 1F         E0 F0 1F            Left Win/Super
 ; E0 27         E0 F0 27            Right Win/Super
-; E0 4A         E0 F0 4A            Keypad /
-; E0 5A         E0 F0 5A            Keypad Enter
+; E0 4A         E0 F0 4A            Numpad /
+; E0 5A         E0 F0 5A            Numpad Enter
 ; E0 69         E0 F0 69            End
 ; E0 6B         E0 F0 6B            Left Arrow
 ; E0 6C         E0 F0 6C            Home
