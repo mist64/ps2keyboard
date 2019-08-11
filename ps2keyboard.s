@@ -286,6 +286,7 @@ kbd_driver:
 	cmp #$83 ; convert weird f7 scancode
 	bne not_f7
 	lda #$02 ; this one is unused
+	tay
 not_f7:
 
 	cmp #$0e ; scancodes < $0E and > $68 are independent of modifiers
